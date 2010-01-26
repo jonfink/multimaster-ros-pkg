@@ -52,6 +52,46 @@ from rospy.init import DEFAULT_NODE_PORT, DEFAULT_MASTER_PORT
 
 from roslib.rosenv import ROS_ROOT, ROS_MASTER_URI, ROS_HOSTNAME, ROS_NAMESPACE, ROS_PACKAGE_PATH, ROS_LOG_DIR
 
+import select
+import pybonjour
+
+def register_callback(sdRef, flags, errorCode, name, regtype, domain):
+    if errorCode == pybonjour.kDNSServiceErr_NoError:
+        print 'Registered service:'
+        print '  name    =', name
+        print '  regtype =', regtype
+        print '  domain  =', domain
+
+def browse_callback(sdRef, flags, interfaceIndex, errorCode, serviceName,
+                    regtype, replyDomain):
+    if errorCode != pybonjour.kDNSServiceErr_NoError:
+        return
+
+    if not (flags & pybonjour.kDNSServiceFlagsAdd):
+        print 'Service removed'
+        return
+
+    print 'Service added; resolving'
+
+    resolve_sdRef = pybonjour.DNSServiceResolve(0,
+                                                interfaceIndex,
+                                                serviceName,
+                                                regtype,
+                                                replyDomain,
+                                                resolve_callback)
+
+    try:
+        while not resolved:
+            ready = select.select([resolve_sdRef], [], [], timeout)
+            if resolve_sdRef not in ready[0]:
+                print 'Resolve timed out'
+                break
+            pybonjour.DNSServiceProcessResult(resolve_sdRef)
+        else:
+            resolved.pop()
+    finally:
+        resolve_sdRef.close()
+
 class ROSMasterHandlerSD(ROSHandler):
     """
     XML-RPC handler for ROS master APIs.
@@ -82,7 +122,32 @@ class ROSMasterHandlerSD(ROSHandler):
         
         self.topics_types = {} #dict { topicName : type }
 
-        self.remote_master_uri = ['http://remora.rodan:11311/', ]
+        name = 'ROS Master'
+        regtype = '_rosmaster._tcp'
+        port = 11311
+
+        self.sdRef = pybonjour.DNSServiceRegister(name=name, 
+                                                  regtype = regtype,
+                                                  port = port,
+                                                  callBack = register_callback)
+
+        waiting = False
+        while waiting:
+            ready = select.select([self.sdRef], [], [])
+            if self.sdRef in ready[0]:
+                pybonjour.DNSServiceProcessResult(self.sdRef)
+                waiting = False
+
+        self.browse_sdRef = pybonjour.DNSServiceBrowse(regtype = regtype,
+                                                       callBack = browse_callback)
+
+        while waiting:
+            ready = select.select([self.browse_sdRef], [], [])
+            if self.browse_sdRef in ready[0]:
+                pybonjour.DNSServiceProcessResult(self.browse_sdRef)
+                waiting = False
+
+        self.remote_master_uri = []
         self.blacklist_topics = ['/clock', '/rosout', '/rosout_agg', '/time']
 
         ## parameter server dictionary
@@ -92,9 +157,12 @@ class ROSMasterHandlerSD(ROSHandler):
         #self.registerSubscriber('/simple_subscriber', '/foo/another_simple_string_sub', 'std_msgs/String', 'http://remora.rodan:51100')
 
     def _shutdown(self, reason=''):
+        self.sdRef.close()
+
         if self.thread_pool is not None:
             self.thread_pool.join_all(wait_for_tasks=False, wait_for_threads=False)
             self.thread_pool = None
+
         return super(ROSMasterHandlerSD, self)._shutdown(reason)
         
     @apivalidate('')
