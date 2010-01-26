@@ -1,0 +1,5 @@
+<launch>
+
+  <master type="zenmaster_sd" auto="restart"/>
+
+</launch>
