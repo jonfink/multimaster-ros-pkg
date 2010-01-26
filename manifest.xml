@@ -1,0 +1,15 @@
+<package>
+  <description brief="zenmaster_sd">
+
+     zenmaster_sd
+
+  </description>
+  <author>Jon Fink</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/zenmaster_sd</url>
+  <depend package="rospy"/>
+
+</package>
+
+
