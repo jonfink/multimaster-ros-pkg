@@ -54,6 +54,16 @@ from roslib.rosenv import ROS_ROOT, ROS_MASTER_URI, ROS_HOSTNAME, ROS_NAMESPACE,
 
 from service_discovery_manager import *
 
+class ROSMasterDiscoveryManager(ServiceDiscoveryManager):
+    def __init__(self, _regtype='_rosmaster._tcp', _port=11311, _timeout=2.0, _freq=1.0, new_master_callback=None):
+        self.new_master_callback = new_master_callback
+        ServiceDiscoveryManager.__init__(self, _regtype, _port, _timeout, _freq)
+
+    def add_remote_service(self, name, hosttarget, port):
+        uri = ServiceDiscoveryManager.add_remote_service(self, name, hosttarget, port)
+        if self.new_master_callback:
+            self.new_master_callback(uri)
+
 class ROSMasterHandlerSD(ROSHandler):
     """
     XML-RPC handler for ROS master APIs.
@@ -85,16 +95,15 @@ class ROSMasterHandlerSD(ROSHandler):
         self.topics_types = {} #dict { topicName : type }
 
         self.blacklist_topics = ['/clock', '/rosout', '/rosout_agg', '/time']
+        self.blacklist_services = ['/rosout/get_loggers', '/rosout/set_logger_level']
 
-        self.sd = ServiceDiscoveryManager('_rosmaster._tcp', 11311)
+        self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, new_master_callback=self.new_master_callback)
 
         self.sd.start()
 
         ## parameter server dictionary
         self.param_server = rospy.paramserver.ParamDictionary(self.reg_manager)
 
-        #self.registerPublisher('/simple_publisher', '/foo/simple_string_pub', 'std_msgs/String', 'http://remora.rodan:38242')
-        #self.registerSubscriber('/simple_subscriber', '/foo/another_simple_string_sub', 'std_msgs/String', 'http://remora.rodan:51100')
 
     def _shutdown(self, reason=''):
         self.sd.stop()
@@ -107,6 +116,42 @@ class ROSMasterHandlerSD(ROSHandler):
 
         return super(ROSMasterHandlerSD, self)._shutdown(reason)
 
+    def new_master_callback(self, remote_master_uri):
+        print 'syncronize new master!'
+        state = self.getSystemState(remote_master_uri)
+        publishers = state[2][0]
+        subscribers = state[2][1]
+        services = state[2][2]
+
+        master = xmlrpcapi(remote_master_uri)
+
+        for topic in publishers:
+            topic_name = topic[0]
+            for publisher in topic[1]:
+                (ret, msg, publisher_uri) = self.lookupNode(remote_master_uri, publisher)
+                if ret == 1:
+                    args = (publisher, topic_name, self.topics_types[topic_name], publisher_uri)
+                    print 'Calling remoteRegisterPublisher(%s, %s, %s, %s)' % args
+                    master.remoteRegisterPublisher(*args)
+
+        for topic in subscribers:
+            topic_name = topic[0]
+            for subscriber in topic[1]:
+                (ret, msg, subscriber_uri) = self.lookupNode(remote_master_uri, subscriber)
+                if ret == 1 and self.topics_types.has_key(topic_name):
+                    args = (subscriber, topic_name, self.topics_types[topic_name], subscriber_uri)
+                    print 'Calling remoteRegisterSubscriber(%s, %s, %s, %s)' % args
+                    master.remoteRegisterSubscriber(*args)
+
+        for service in services:
+            service_name = service[0]
+            for provider in service[1]:
+                (ret, msg, provider_uri) = self.lookupNode(remote_master_uri, provider)
+                (ret, msg, service_uri) = self.lookupService(remote_master_uri, service_name)
+                if ret == 1:
+                    args = (provider, service_name, service_uri, provider_uri)
+                    print 'Calling remoteRegisterService(%s, %s, %s, %s)' % args
+                    master.remoteRegisterService(*args)
             
     @apivalidate('')
     def getMasterUri(self, caller_id): #override super behavior
