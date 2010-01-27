@@ -116,8 +116,15 @@ class ROSMasterHandlerSD(ROSHandler):
 
         return super(ROSMasterHandlerSD, self)._shutdown(reason)
 
+    def _blacklisted_topic(self, topic):
+        d = ','
+        return (d.join(self.blacklist_topics).find(topic) >= 0)
+
+    def _blacklisted_service(self, service):
+        d = ','
+        return (d.join(self.blacklist_services).find(service) >= 0)
+
     def new_master_callback(self, remote_master_uri):
-        print 'syncronize new master!'
         state = self.getSystemState(remote_master_uri)
         publishers = state[2][0]
         subscribers = state[2][1]
@@ -127,6 +134,8 @@ class ROSMasterHandlerSD(ROSHandler):
 
         for topic in publishers:
             topic_name = topic[0]
+            if self._blacklisted_topic(topic_name):
+                continue
             for publisher in topic[1]:
                 (ret, msg, publisher_uri) = self.lookupNode(remote_master_uri, publisher)
                 if ret == 1:
@@ -136,6 +145,8 @@ class ROSMasterHandlerSD(ROSHandler):
 
         for topic in subscribers:
             topic_name = topic[0]
+            if self._blacklisted_topic(topic_name):
+                continue
             for subscriber in topic[1]:
                 (ret, msg, subscriber_uri) = self.lookupNode(remote_master_uri, subscriber)
                 if ret == 1 and self.topics_types.has_key(topic_name):
@@ -145,6 +156,8 @@ class ROSMasterHandlerSD(ROSHandler):
 
         for service in services:
             service_name = service[0]
+            if self._blacklisted_service(service_name):
+                continue
             for provider in service[1]:
                 (ret, msg, provider_uri) = self.lookupNode(remote_master_uri, provider)
                 (ret, msg, service_uri) = self.lookupService(remote_master_uri, service_name)
@@ -494,8 +507,7 @@ class ROSMasterHandlerSD(ROSHandler):
         finally:
             self.ps_lock.release()
 
-        d = ','
-        if d.join(self.blacklist_services).find(service) < 0:
+        if not self._blacklisted_service(service):
             args = (caller_id, service, service_api, caller_api)
             print 'Remote registerService(%s, %s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
@@ -586,8 +598,7 @@ class ROSMasterHandlerSD(ROSHandler):
         if retval[2] == 0:
             return retval
 
-        d = ','
-        if d.join(self.blacklist_services).find(service) < 0:
+        if not self._blacklisted_service(service):
             args = (caller_id, service, service_api)
             print 'Remote unregisterService(%s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
@@ -665,8 +676,7 @@ class ROSMasterHandlerSD(ROSHandler):
         finally:
             self.ps_lock.release()
 
-        d = ','
-        if d.join(self.blacklist_topics).find(topic) < 0:
+        if not self._blacklisted_topic(topic):
             args = (caller_id, topic, topic_type, caller_api)
             print 'Remote registerSubscriber(%s, %s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
@@ -715,7 +725,6 @@ class ROSMasterHandlerSD(ROSHandler):
 
         return 1, "Subscribed to [%s]"%topic, pub_uris
 
-
     _mremap_table['unregisterSubscriber'] = [0] # remap topic    
     @apivalidate(0, (is_topic('topic'), is_api('caller_api')))
     def unregisterSubscriber(self, caller_id, topic, caller_api):
@@ -733,7 +742,6 @@ class ROSMasterHandlerSD(ROSHandler):
           The call still succeeds as the intended final state is reached.
         @rtype: (int, str, int)
         """
-        print 'unregisterSubscriber... %s %s %s' % (caller_id, topic, caller_api)
         try:
             self.ps_lock.acquire()
             retval = self.reg_manager.unregister_subscriber(topic, caller_id, caller_api)
@@ -744,8 +752,7 @@ class ROSMasterHandlerSD(ROSHandler):
         if retval[2] == 0:
             return retval
 
-        d = ','
-        if d.join(self.blacklist_topics).find(topic) < 0:
+        if not self._blacklisted_topic(topic):
             args = (caller_id, topic, caller_api)
             print 'Remote unregisterSubscriber(%s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
@@ -824,8 +831,7 @@ class ROSMasterHandlerSD(ROSHandler):
         finally:
             self.ps_lock.release()
 
-        d = ','
-        if d.join(self.blacklist_topics).find(topic) < 0:
+        if not self._blacklisted_topic(topic):
             args = (caller_id, topic, topic_type, caller_api)
             print 'Remote registerPublisher(%s, %s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
@@ -910,8 +916,7 @@ class ROSMasterHandlerSD(ROSHandler):
         if retval[2] == 0:
             return retval
 
-        d = ','
-        if d.join(self.blacklist_topics).find(topic) < 0:
+        if not self._blacklisted_topic(topic):
             args = (caller_id, topic, caller_api)
             print 'Remote unregisterPublisher(%s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
