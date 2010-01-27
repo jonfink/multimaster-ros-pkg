@@ -108,10 +108,22 @@ class ServiceDiscoveryManager(threading.Thread):
         if errorCode == pybonjour.kDNSServiceErr_NoError:
             self.resolved.append(True)
             print 'Resolved service: %s, %s, %s' % (fullname, hosttarget, port)
-            self.remote_services_lock.acquire()
-            self.remote_services[fullname]= 'http://%s:%d/' % (hosttarget, port)
-            print self.remote_services.keys()
-            self.remote_services_lock.release()
+            self.add_remote_service(fullname, hosttarget, port)
+
+    def add_remote_service(self, name, hosttarget, port):
+        uri = 'http://%s:%d/' % (hosttarget, port)
+        self.remote_services_lock.acquire()
+        self.remote_services[name]= uri
+        print self.remote_services.keys()
+        self.remote_services_lock.release()
+        return uri
+
+    def remove_remote_service(self, name):
+        self.remote_services_lock.acquire()
+        if self.remote_services.has_key(name):
+            self.remote_services.pop(name)
+        print self.remote_services.keys()
+        self.remote_services_lock.release()
 
 if __name__=='__main__':
     sd = ServiceDiscoveryManager()

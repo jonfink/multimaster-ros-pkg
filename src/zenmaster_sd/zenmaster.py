@@ -54,6 +54,16 @@ from roslib.rosenv import ROS_ROOT, ROS_MASTER_URI, ROS_HOSTNAME, ROS_NAMESPACE,
 
 from service_discovery_manager import *
 
+class ROSMasterDiscoveryManager(ServiceDiscoveryManager):
+    def __init__(self, _regtype='_rosmaster._tcp', _port=11311, _timeout=2.0, _freq=1.0, new_master_callback=None):
+        self.new_master_callback = new_master_callback
+        ServiceDiscoveryManager.__init__(self, _regtype, _port, _timeout, _freq)
+
+    def add_remote_service(self, name, hosttarget, port):
+        uri = ServiceDiscoveryManager.add_remote_service(self, name, hosttarget, port)
+        if self.new_master_callback:
+            self.new_master_callback(uri)
+
 class ROSMasterHandlerSD(ROSHandler):
     """
     XML-RPC handler for ROS master APIs.
@@ -85,16 +95,15 @@ class ROSMasterHandlerSD(ROSHandler):
         self.topics_types = {} #dict { topicName : type }
 
         self.blacklist_topics = ['/clock', '/rosout', '/rosout_agg', '/time']
+        self.blacklist_services = ['/rosout/get_loggers', '/rosout/set_logger_level']
 
-        self.sd = ServiceDiscoveryManager('_rosmaster._tcp', 11311)
+        self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, new_master_callback=self.new_master_callback)
 
         self.sd.start()
 
         ## parameter server dictionary
         self.param_server = rospy.paramserver.ParamDictionary(self.reg_manager)
 
-        #self.registerPublisher('/simple_publisher', '/foo/simple_string_pub', 'std_msgs/String', 'http://remora.rodan:38242')
-        #self.registerSubscriber('/simple_subscriber', '/foo/another_simple_string_sub', 'std_msgs/String', 'http://remora.rodan:51100')
 
     def _shutdown(self, reason=''):
         self.sd.stop()
@@ -107,6 +116,42 @@ class ROSMasterHandlerSD(ROSHandler):
 
         return super(ROSMasterHandlerSD, self)._shutdown(reason)
 
+    def new_master_callback(self, remote_master_uri):
+        print 'syncronize new master!'
+        state = self.getSystemState(remote_master_uri)
+        publishers = state[2][0]
+        subscribers = state[2][1]
+        services = state[2][2]
+
+        master = xmlrpcapi(remote_master_uri)
+
+        for topic in publishers:
+            topic_name = topic[0]
+            for publisher in topic[1]:
+                (ret, msg, publisher_uri) = self.lookupNode(remote_master_uri, publisher)
+                if ret == 1:
+                    args = (publisher, topic_name, self.topics_types[topic_name], publisher_uri)
+                    print 'Calling remoteRegisterPublisher(%s, %s, %s, %s)' % args
+                    master.remoteRegisterPublisher(*args)
+
+        for topic in subscribers:
+            topic_name = topic[0]
+            for subscriber in topic[1]:
+                (ret, msg, subscriber_uri) = self.lookupNode(remote_master_uri, subscriber)
+                if ret == 1 and self.topics_types.has_key(topic_name):
+                    args = (subscriber, topic_name, self.topics_types[topic_name], subscriber_uri)
+                    print 'Calling remoteRegisterSubscriber(%s, %s, %s, %s)' % args
+                    master.remoteRegisterSubscriber(*args)
+
+        for service in services:
+            service_name = service[0]
+            for provider in service[1]:
+                (ret, msg, provider_uri) = self.lookupNode(remote_master_uri, provider)
+                (ret, msg, service_uri) = self.lookupService(remote_master_uri, service_name)
+                if ret == 1:
+                    args = (provider, service_name, service_uri, provider_uri)
+                    print 'Calling remoteRegisterService(%s, %s, %s, %s)' % args
+                    master.remoteRegisterService(*args)
             
     @apivalidate('')
     def getMasterUri(self, caller_id): #override super behavior
@@ -448,6 +493,45 @@ class ROSMasterHandlerSD(ROSHandler):
                 self._notify_service_update(service, service_api)
         finally:
             self.ps_lock.release()
+
+        d = ','
+        if d.join(self.blacklist_services).find(service) < 0:
+            args = (caller_id, service, service_api, caller_api)
+            print 'Remote registerService(%s, %s, %s, %s)' % args
+            remote_master_uri = self.sd.get_remote_services().values()
+            for m in remote_master_uri:
+                print '... on %s' % m
+                master = xmlrpcapi(m)
+                code, msg, val = master.remoteRegisterService(*args)
+                if code != 1:
+                    logwarn("unable to register service [%s] with master %s: %s"%(service, m, msg))
+
+        return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
+
+    _mremap_table['remoteRegisterService'] = [0] # remap service
+    @apivalidate(0, ( is_service('service'), is_api('service_api'), is_api('caller_api')))
+    def remoteRegisterService(self, caller_id, service, service_api, caller_api):
+        """
+        Register the caller as a provider of the specified service.
+        @param caller_id str: ROS caller id
+        @type  caller_id: str
+        @param service: Fully-qualified name of service 
+        @type  service: str
+        @param service_api: Service URI 
+        @type  service_api: str
+        @param caller_api: XML-RPC URI of caller node 
+        @type  caller_api: str
+        @return: (code, message, ignore)
+        @rtype: (int, str, int)
+        """        
+        try:
+            self.ps_lock.acquire()
+            self.reg_manager.register_service(service, caller_id, caller_api, service_api)
+            mloginfo("+SERVICE [%s] %s %s", service, caller_id, caller_api)
+            if 0: #TODO
+                self._notify_service_update(service, service_api)
+        finally:
+            self.ps_lock.release()
         return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
 
     _mremap_table['lookupService'] = [0] # remap service
@@ -476,6 +560,50 @@ class ROSMasterHandlerSD(ROSHandler):
     _mremap_table['unregisterService'] = [0] # remap service
     @apivalidate(0, ( is_service('service'), is_api('service_api')))
     def unregisterService(self, caller_id, service, service_api):
+        """
+        Unregister the caller as a provider of the specified service.
+        @param caller_id str: ROS caller id
+        @type  caller_id: str
+        @param service: Fully-qualified name of service
+        @type  service: str
+        @param service_api: API URI of service to unregister. Unregistration will only occur if current
+           registration matches.
+        @type  service_api: str
+        @return: (code, message, numUnregistered). Number of unregistrations (either 0 or 1).
+           If this is zero it means that the caller was not registered as a service provider.
+           The call still succeeds as the intended final state is reached.
+        @rtype: (int, str, int)
+        """
+        try:
+            self.ps_lock.acquire()
+            retval = self.reg_manager.unregister_service(service, caller_id, service_api)
+            if 0: #TODO
+                self._notify_service_update(service, service_api)
+            mloginfo("-SERVICE [%s] %s %s", service, caller_id, service_api)
+        finally:
+            self.ps_lock.release()
+
+        if retval[2] == 0:
+            return retval
+
+        d = ','
+        if d.join(self.blacklist_services).find(service) < 0:
+            args = (caller_id, service, service_api)
+            print 'Remote unregisterService(%s, %s, %s)' % args
+            remote_master_uri = self.sd.get_remote_services().values()
+            for m in remote_master_uri:
+                print '... on %s' % m
+                master = xmlrpcapi(m)
+                code, msg, val = master.remoteUnregisterService(*args)
+                if code != 1:
+                    logwarn("unable to unregister service [%s] with master %s: %s"%(service, m, msg))
+        
+
+        return retval
+
+    _mremap_table['remoteUnregisterService'] = [0] # remap service
+    @apivalidate(0, ( is_service('service'), is_api('service_api')))
+    def remoteUnregisterService(self, caller_id, service, service_api):
         """
         Unregister the caller as a provider of the specified service.
         @param caller_id str: ROS caller id
@@ -605,11 +733,11 @@ class ROSMasterHandlerSD(ROSHandler):
           The call still succeeds as the intended final state is reached.
         @rtype: (int, str, int)
         """
+        print 'unregisterSubscriber... %s %s %s' % (caller_id, topic, caller_api)
         try:
             self.ps_lock.acquire()
             retval = self.reg_manager.unregister_subscriber(topic, caller_id, caller_api)
             mloginfo("-SUB [%s] %s %s",topic, caller_id, caller_api)
-            return retval
         finally:
             self.ps_lock.release()
 
@@ -651,12 +779,8 @@ class ROSMasterHandlerSD(ROSHandler):
             self.ps_lock.acquire()
             retval = self.reg_manager.unregister_subscriber(topic, caller_id, caller_api)
             mloginfo("-SUB [%s] %s %s",topic, caller_id, caller_api)
-            return retval
         finally:
             self.ps_lock.release()
-
-        if retval[2] == 0:
-            return retval
 
         return retval
 
@@ -826,9 +950,6 @@ class ROSMasterHandlerSD(ROSHandler):
             mloginfo("-PUB [%s] %s %s",topic, caller_id, caller_api)
         finally:
             self.ps_lock.release()
-
-        if retval[2] == 0:
-            return retval
 
         return retval
 
