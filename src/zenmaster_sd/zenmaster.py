@@ -98,7 +98,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
     def _shutdown(self, reason=''):
         self.sd.stop()
-        if self.sd.is_alive():
+        if self.sd.isAlive():
             self.sd.join()
         
         if self.thread_pool is not None:
