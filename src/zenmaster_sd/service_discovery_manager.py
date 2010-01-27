@@ -59,10 +59,7 @@ class ServiceDiscoveryManager(threading.Thread):
 
     def register_callback(self, sdRef, flags, errorCode, name, regtype, domain):
         if errorCode == pybonjour.kDNSServiceErr_NoError:
-            print 'Registered service:'
-            print '  name    =', name
-            print '  regtype =', regtype
-            print '  domain  =', domain
+            print 'Registered service: %s, %s, %s' % (name, regtype, domain)
 
     def browse_callback(self, sdRef, flags, interfaceIndex, errorCode, serviceName,
                             regtype, replyDomain):
@@ -70,13 +67,19 @@ class ServiceDiscoveryManager(threading.Thread):
             return
         
         if not (flags & pybonjour.kDNSServiceFlagsAdd):
-            print 'Service removed'
             self.remote_services_lock.acquire()
-            self.remote_services.pop(serviceName)
+            self.remote_services.pop(serviceName+'.'+regtype+replyDomain)
+            print self.remote_services.keys()
             self.remote_services_lock.release()
             return
-        
-        print 'Service added on interface %d; resolving' % interfaceIndex
+
+        service_known = False
+        self.remote_services_lock.acquire()
+        service_known = self.remote_services.has_key(serviceName+'.'+regtype+replyDomain)
+        self.remote_services_lock.release()
+
+        if service_known:
+            return
         
         resolve_sdRef = pybonjour.DNSServiceResolve(0,
                                                     interfaceIndex,
@@ -102,20 +105,12 @@ class ServiceDiscoveryManager(threading.Thread):
     def resolve_callback(self, sdRef, flags, interfaceIndex, errorCode, fullname,
                              hosttarget, port, txtRecord):
         if errorCode == pybonjour.kDNSServiceErr_NoError:
-            service_known = False
-            self.remote_services_lock.acquire()
-            service_known = self.remote_services.has_key(fullname)
-            self.remote_services_lock.release()
             self.resolved.append(True)
-
-            if not service_known:
-                print 'Resolved service:'
-                print '  fullname   =', fullname
-                print '  hosttarget =', hosttarget
-                print '  port       =', port
-                self.remote_services_lock.acquire()
-                self.remote_services[fullname]= 'http:/%s:%d/' % (hosttarget, port)
-                self.remote_services_lock.release()
+            print 'Resolved service: %s, %s, %s' % (fullname, hosttarget, port)
+            self.remote_services_lock.acquire()
+            self.remote_services[fullname]= 'http:/%s:%d/' % (hosttarget, port)
+            print self.remote_services.keys()
+            self.remote_services_lock.release()
 
 if __name__=='__main__':
     sd = ServiceDiscoveryManager()
