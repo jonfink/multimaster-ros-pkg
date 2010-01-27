@@ -76,7 +76,7 @@ class ServiceDiscoveryManager(threading.Thread):
             self.remote_services_lock.release()
             return
         
-        print 'Service added; resolving'
+        print 'Service added on interface %d; resolving' % interfaceIndex
         
         resolve_sdRef = pybonjour.DNSServiceResolve(0,
                                                     interfaceIndex,
@@ -102,14 +102,20 @@ class ServiceDiscoveryManager(threading.Thread):
     def resolve_callback(self, sdRef, flags, interfaceIndex, errorCode, fullname,
                              hosttarget, port, txtRecord):
         if errorCode == pybonjour.kDNSServiceErr_NoError:
-            print 'Resolved service:'
-            print '  fullname   =', fullname
-            print '  hosttarget =', hosttarget
-            print '  port       =', port
-            self.resolved.append(True)
+            service_known = False
             self.remote_services_lock.acquire()
-            self.remote_services[fullname]= 'http:/%s:%d/' % (hosttarget, port)
+            service_known = self.remote_services.has_key(fullname)
             self.remote_services_lock.release()
+            self.resolved.append(True)
+
+            if not service_known:
+                print 'Resolved service:'
+                print '  fullname   =', fullname
+                print '  hosttarget =', hosttarget
+                print '  port       =', port
+                self.remote_services_lock.acquire()
+                self.remote_services[fullname]= 'http:/%s:%d/' % (hosttarget, port)
+                self.remote_services_lock.release()
 
 if __name__=='__main__':
     sd = ServiceDiscoveryManager()
@@ -123,5 +129,5 @@ if __name__=='__main__':
             pass
     finally:
         sd.stop()
-        if sd.is_alive():
+        if sd.isAlive():
             sd.join()            
