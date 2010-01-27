@@ -448,6 +448,45 @@ class ROSMasterHandlerSD(ROSHandler):
                 self._notify_service_update(service, service_api)
         finally:
             self.ps_lock.release()
+
+        d = ','
+        if d.join(self.blacklist_services).find(service) < 0:
+            args = (caller_id, service, service_api, caller_api)
+            print 'Remote registerService(%s, %s, %s, %s)' % args
+            remote_master_uri = self.sd.get_remote_services().values()
+            for m in remote_master_uri:
+                print '... on %s' % m
+                master = xmlrpcapi(m)
+                code, msg, val = master.remoteRegisterService(*args)
+                if code != 1:
+                    logwarn("unable to register service [%s] with master %s: %s"%(service, m, msg))
+
+        return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
+
+    _mremap_table['remoteRegisterService'] = [0] # remap service
+    @apivalidate(0, ( is_service('service'), is_api('service_api'), is_api('caller_api')))
+    def remoteRegisterService(self, caller_id, service, service_api, caller_api):
+        """
+        Register the caller as a provider of the specified service.
+        @param caller_id str: ROS caller id
+        @type  caller_id: str
+        @param service: Fully-qualified name of service 
+        @type  service: str
+        @param service_api: Service URI 
+        @type  service_api: str
+        @param caller_api: XML-RPC URI of caller node 
+        @type  caller_api: str
+        @return: (code, message, ignore)
+        @rtype: (int, str, int)
+        """        
+        try:
+            self.ps_lock.acquire()
+            self.reg_manager.register_service(service, caller_id, caller_api, service_api)
+            mloginfo("+SERVICE [%s] %s %s", service, caller_id, caller_api)
+            if 0: #TODO
+                self._notify_service_update(service, service_api)
+        finally:
+            self.ps_lock.release()
         return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
 
     _mremap_table['lookupService'] = [0] # remap service
@@ -476,6 +515,50 @@ class ROSMasterHandlerSD(ROSHandler):
     _mremap_table['unregisterService'] = [0] # remap service
     @apivalidate(0, ( is_service('service'), is_api('service_api')))
     def unregisterService(self, caller_id, service, service_api):
+        """
+        Unregister the caller as a provider of the specified service.
+        @param caller_id str: ROS caller id
+        @type  caller_id: str
+        @param service: Fully-qualified name of service
+        @type  service: str
+        @param service_api: API URI of service to unregister. Unregistration will only occur if current
+           registration matches.
+        @type  service_api: str
+        @return: (code, message, numUnregistered). Number of unregistrations (either 0 or 1).
+           If this is zero it means that the caller was not registered as a service provider.
+           The call still succeeds as the intended final state is reached.
+        @rtype: (int, str, int)
+        """
+        try:
+            self.ps_lock.acquire()
+            retval = self.reg_manager.unregister_service(service, caller_id, service_api)
+            if 0: #TODO
+                self._notify_service_update(service, service_api)
+            mloginfo("-SERVICE [%s] %s %s", service, caller_id, service_api)
+        finally:
+            self.ps_lock.release()
+
+        if retval[2] == 0:
+            return retval
+
+        d = ','
+        if d.join(self.blacklist_services).find(service) < 0:
+            args = (caller_id, service, service_api)
+            print 'Remote unregisterService(%s, %s, %s)' % args
+            remote_master_uri = self.sd.get_remote_services().values()
+            for m in remote_master_uri:
+                print '... on %s' % m
+                master = xmlrpcapi(m)
+                code, msg, val = master.remoteUnregisterService(*args)
+                if code != 1:
+                    logwarn("unable to unregister service [%s] with master %s: %s"%(service, m, msg))
+        
+
+        return retval
+
+    _mremap_table['remoteUnregisterService'] = [0] # remap service
+    @apivalidate(0, ( is_service('service'), is_api('service_api')))
+    def remoteUnregisterService(self, caller_id, service, service_api):
         """
         Unregister the caller as a provider of the specified service.
         @param caller_id str: ROS caller id
@@ -605,11 +688,11 @@ class ROSMasterHandlerSD(ROSHandler):
           The call still succeeds as the intended final state is reached.
         @rtype: (int, str, int)
         """
+        print 'unregisterSubscriber... %s %s %s' % (caller_id, topic, caller_api)
         try:
             self.ps_lock.acquire()
             retval = self.reg_manager.unregister_subscriber(topic, caller_id, caller_api)
             mloginfo("-SUB [%s] %s %s",topic, caller_id, caller_api)
-            return retval
         finally:
             self.ps_lock.release()
 
@@ -651,12 +734,8 @@ class ROSMasterHandlerSD(ROSHandler):
             self.ps_lock.acquire()
             retval = self.reg_manager.unregister_subscriber(topic, caller_id, caller_api)
             mloginfo("-SUB [%s] %s %s",topic, caller_id, caller_api)
-            return retval
         finally:
             self.ps_lock.release()
-
-        if retval[2] == 0:
-            return retval
 
         return retval
 
@@ -826,9 +905,6 @@ class ROSMasterHandlerSD(ROSHandler):
             mloginfo("-PUB [%s] %s %s",topic, caller_id, caller_api)
         finally:
             self.ps_lock.release()
-
-        if retval[2] == 0:
-            return retval
 
         return retval
 
