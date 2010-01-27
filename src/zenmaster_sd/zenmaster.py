@@ -96,6 +96,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
         self.blacklist_topics = ['/clock', '/rosout', '/rosout_agg', '/time']
         self.blacklist_services = ['/rosout/get_loggers', '/rosout/set_logger_level']
+        self.blacklist_params = ['/run_id']
 
         self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, new_master_callback=self.new_master_callback)
 
@@ -103,7 +104,6 @@ class ROSMasterHandlerSD(ROSHandler):
 
         ## parameter server dictionary
         self.param_server = rospy.paramserver.ParamDictionary(self.reg_manager)
-
 
     def _shutdown(self, reason=''):
         self.sd.stop()
@@ -124,11 +124,17 @@ class ROSMasterHandlerSD(ROSHandler):
         d = ','
         return (d.join(self.blacklist_services).find(service) >= 0)
 
+    def _blacklisted_param(self, key):
+        d = ','
+        return (d.join(self.blacklist_params).find(key) >= 0)
+
     def new_master_callback(self, remote_master_uri):
         state = self.getSystemState(remote_master_uri)
         publishers = state[2][0]
         subscribers = state[2][1]
         services = state[2][2]
+
+        print self.getMasterUri(remote_master_uri)
 
         master = xmlrpcapi(remote_master_uri)
 
@@ -165,6 +171,15 @@ class ROSMasterHandlerSD(ROSHandler):
                     args = (provider, service_name, service_uri, provider_uri)
                     print 'Calling remoteRegisterService(%s, %s, %s, %s)' % args
                     master.remoteRegisterService(*args)
+
+        param_names = self.param_server.get_param_names()
+        for key in param_names:
+            if self._blacklisted_param(key):
+                continue
+            value = self.param_server.get_param(key)
+            args = (remote_master_uri, key, value)
+            print 'Calling remoteSetParam(%s, %s, %s)' % args
+            master.remoteSetParam(*args)
             
     @apivalidate('')
     def getMasterUri(self, caller_id): #override super behavior
@@ -210,6 +225,36 @@ class ROSMasterHandlerSD(ROSHandler):
         try:
             key = resolve_name(key, caller_id)
             self.param_server.delete_param(key, self._notify_param_subscribers)
+            mloginfo("-PARAM [%s] by %s",key, caller_id) 
+
+            if not self._blacklisted_param(key):
+                args = (caller_id, key)
+                remote_master_uri = self.sd.get_remote_services().values()
+                for m in remote_master_uri:
+                    master = xmlrpcapi(m)
+                    code, msg, val = master.remoteDeleteParam(*args)
+                    if code != 1:
+                        logwarn("unable to delete param [%s] on master %s: %s" % (key, m, msg))
+           
+            return  1, "parameter %s deleted"%key, 0                
+        except KeyError, e:
+            return -1, "parameter [%s] is not set"%key, 0
+
+    _mremap_table['remoteDeleteParam'] = [0] # remap key
+    @apivalidate(0, (non_empty_str('key'),))
+    def remoteDeleteParam(self, caller_id, key):
+        """
+        Parameter Server: delete parameter on remote master
+        @param caller_id: ROS caller id
+        @type  caller_id: str
+        @param key: parameter name
+        @type  key: str
+        @return: [code, msg, 0]
+        @rtype: [int, str, int]
+        """
+        try:
+            key = resolve_name(key, caller_id)
+            self.param_server.delete_param(key, self._notify_param_subscribers)
             mloginfo("-PARAM [%s] by %s",key, caller_id)            
             return  1, "parameter %s deleted"%key, 0                
         except KeyError, e:
@@ -220,6 +265,45 @@ class ROSMasterHandlerSD(ROSHandler):
     def setParam(self, caller_id, key, value):
         """
         Parameter Server: set parameter.  NOTE: if value is a
+        dictionary it will be treated as a parameter tree, where key
+        is the parameter namespace. For example:::
+          {'x':1,'y':2,'sub':{'z':3}}
+
+        will set key/x=1, key/y=2, and key/sub/z=3. Furthermore, it
+        will replace all existing parameters in the key parameter
+        namespace with the parameters in value. You must set
+        parameters individually if you wish to perform a union update.
+        
+        @param caller_id: ROS caller id
+        @type  caller_id: str
+        @param key: parameter name
+        @type  key: str
+        @param value: parameter value.
+        @type  value: XMLRPCLegalValue
+        @return: [code, msg, 0]
+        @rtype: [int, str, int]
+        """
+        key = resolve_name(key, caller_id)
+        self.param_server.set_param(key, value, self._notify_param_subscribers)
+        mloginfo("+PARAM [%s] by %s",key, caller_id)
+
+        if not self._blacklisted_param(key):
+            args = (caller_id, key, value)
+            remote_master_uri = self.sd.get_remote_services().values()
+            for m in remote_master_uri:
+                master = xmlrpcapi(m)
+                code, msg, val = master.remoteSetParam(*args)
+                if code != 1:
+                    logwarn("unable to set param [%s] on master %s: %s" % (key, m, msg))
+
+        return 1, "parameter %s set"%key, 0
+
+    _mremap_table['remoteSetParam'] = [0] # remap key
+    @apivalidate(0, (non_empty_str('key'), not_none('value')))
+    def remoteSetParam(self, caller_id, key, value):
+        """
+        Parameter Server: set parameter on remote master. 
+        NOTE: if value is a
         dictionary it will be treated as a parameter tree, where key
         is the parameter namespace. For example:::
           {'x':1,'y':2,'sub':{'z':3}}
