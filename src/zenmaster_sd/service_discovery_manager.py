@@ -72,7 +72,8 @@ class ServiceDiscoveryManager(threading.Thread):
         if not (flags & pybonjour.kDNSServiceFlagsAdd):
             print 'Service removed'
             self.remote_services_lock.acquire()
-            self.remote_services.pop(serviceName)
+            self.remote_services.pop(serviceName+'.'+regtype+replyDomain)
+            print self.remote_services
             self.remote_services_lock.release()
             return
         
@@ -109,6 +110,7 @@ class ServiceDiscoveryManager(threading.Thread):
             self.resolved.append(True)
             self.remote_services_lock.acquire()
             self.remote_services[fullname]= 'http:/%s:%d/' % (hosttarget, port)
+            print self.remote_services
             self.remote_services_lock.release()
 
 if __name__=='__main__':
