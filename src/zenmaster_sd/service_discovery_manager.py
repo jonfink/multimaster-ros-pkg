@@ -68,7 +68,8 @@ class ServiceDiscoveryManager(threading.Thread):
         
         if not (flags & pybonjour.kDNSServiceFlagsAdd):
             self.remote_services_lock.acquire()
-            self.remote_services.pop(serviceName+'.'+regtype+replyDomain)
+            if self.remote_services.has_key(serviceName+'.'+regtype+replyDomain):
+                self.remote_services.pop(serviceName+'.'+regtype+replyDomain)
             print self.remote_services.keys()
             self.remote_services_lock.release()
             return
