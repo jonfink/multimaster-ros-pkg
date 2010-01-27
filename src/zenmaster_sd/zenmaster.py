@@ -545,11 +545,48 @@ class ROSMasterHandlerSD(ROSHandler):
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
-                code, msg, val = master.registerSubscriber(*args)
+                code, msg, val = master.remoteRegisterSubscriber(*args)
                 if code != 1:
-                    logwarning("unable to register subscription [%s] with master %s: %s"%(topic, m, msg))
+                    logwarn("unable to register subscription [%s] with master %s: %s"%(topic, m, msg))
 
         return 1, "Subscribed to [%s]"%topic, pub_uris
+
+    _mremap_table['remoteRegisterSubscriber'] = [0] # remap topic
+    @apivalidate(0, ( is_topic('topic'), valid_type_name('topic_type'), is_api('caller_api')))
+    def remoteRegisterSubscriber(self, caller_id, topic, topic_type, caller_api):
+        """
+        Subscribe the caller to the specified topic. In addition to receiving
+        a list of current publishers, the subscriber will also receive notifications
+        of new publishers via the publisherUpdate API.        
+        @param caller_id: ROS caller id
+        @type  caller_id: str
+        @param topic str: Fully-qualified name of topic to subscribe to. 
+        @param topic_type: Datatype for topic. Must be a package-resource name, i.e. the .msg name.
+        @type  topic_type: str
+        @param caller_api: XML-RPC URI of caller node for new publisher notifications
+        @type  caller_api: str
+        @return: (code, message, publishers). Publishers is a list of XMLRPC API URIs
+           for nodes currently publishing the specified topic.
+        @rtype: (int, str, [str])
+        """
+        #NOTE: subscribers do not get to set topic type
+        try:
+            self.ps_lock.acquire()
+
+            sub_uris = self.subscribers.get_apis(topic)
+            d=','
+            if d.join(sub_uris).find(caller_api) >= 0:
+                pub_uris = self.publishers.get_apis(topic)
+                return 1, "Already subscribed to [%s]"%topic, pub_uris
+                
+            self.reg_manager.register_subscriber(topic, caller_id, caller_api)
+            mloginfo("+SUB [%s] %s %s",topic, caller_id, caller_api)
+            pub_uris = self.publishers.get_apis(topic)
+        finally:
+            self.ps_lock.release()
+
+        return 1, "Subscribed to [%s]"%topic, pub_uris
+
 
     _mremap_table['unregisterSubscriber'] = [0] # remap topic    
     @apivalidate(0, (is_topic('topic'), is_api('caller_api')))
@@ -587,12 +624,41 @@ class ROSMasterHandlerSD(ROSHandler):
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
-                code, msg, val = master.unregisterSubscriber(*args)
+                code, msg, val = master.remoteUnregisterSubscriber(*args)
                 if code != 1:
-                    logwarning("unable to unregister subscription [%s] with master %s: %s"%(topic, m, msg))
+                    logwarn("unable to unregister subscription [%s] with master %s: %s"%(topic, m, msg))
 
         return retval
 
+    _mremap_table['remoteUnregisterSubscriber'] = [0] # remap topic    
+    @apivalidate(0, (is_topic('topic'), is_api('caller_api')))
+    def remoteUnregisterSubscriber(self, caller_id, topic, caller_api):
+        """
+        Unregister the caller as a publisher of the topic.
+        @param caller_id: ROS caller id
+        @type  caller_id: str
+        @param topic: Fully-qualified name of topic to unregister.
+        @type  topic: str
+        @param caller_api: API URI of service to unregister. Unregistration will only occur if current
+           registration matches.    
+        @type  caller_api: str
+        @return: (code, statusMessage, numUnsubscribed). 
+          If numUnsubscribed is zero it means that the caller was not registered as a subscriber.
+          The call still succeeds as the intended final state is reached.
+        @rtype: (int, str, int)
+        """
+        try:
+            self.ps_lock.acquire()
+            retval = self.reg_manager.unregister_subscriber(topic, caller_id, caller_api)
+            mloginfo("-SUB [%s] %s %s",topic, caller_id, caller_api)
+            return retval
+        finally:
+            self.ps_lock.release()
+
+        if retval[2] == 0:
+            return retval
+
+        return retval
 
     _mremap_table['registerPublisher'] = [0] # remap topic   
     @apivalidate(0, ( is_topic('topic'), valid_type_name('topic_type'), is_api('caller_api')))
@@ -642,12 +708,53 @@ class ROSMasterHandlerSD(ROSHandler):
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
-                code, msg, val = master.registerPublisher(*args)
+                code, msg, val = master.remoteRegisterPublisher(*args)
                 if code != 1:
-                    logwarning("unable to register publication [%s] with remote master %s: %s"%(topic, m, msg))
+                    logwarn("unable to register publication [%s] with remote master %s: %s"%(topic, m, msg))
 
         return 1, "Registered [%s] as publisher of [%s]"%(caller_id, topic), sub_uris
 
+    _mremap_table['remoteRegisterPublisher'] = [0] # remap topic   
+    @apivalidate(0, ( is_topic('topic'), valid_type_name('topic_type'), is_api('caller_api')))
+    def remoteRegisterPublisher(self, caller_id, topic, topic_type, caller_api):
+        """
+        Register the caller as a publisher the topic.
+        @param caller_id: ROS caller id
+        @type  caller_id: str
+        @param topic: Fully-qualified name of topic to register.
+        @type  topic: str
+        @param topic_type: Datatype for topic. Must be a
+        package-resource name, i.e. the .msg name.
+        @type  topic_type: str
+        @param caller_api str: ROS caller XML-RPC API URI
+        @type  caller_api: str
+        @return: (code, statusMessage, subscriberApis).
+        List of current subscribers of topic in the form of XMLRPC URIs.
+        @rtype: (int, str, [str])
+        """
+        #NOTE: we need topic_type for getPublishedTopics.
+        try:
+            self.ps_lock.acquire()
+
+            # check if we already have registration of this topic, caller_id pair
+            pub_uris = self.publishers.get_apis(topic)
+            d=','
+            if d.join(pub_uris).find(caller_api) >= 0:
+                sub_uris = self.subscribers.get_apis(topic)
+                return 1, "Already registered [%s] as publisher of [%s]"%(caller_id, topic), sub_uris
+
+            self.reg_manager.register_publisher(topic, caller_id, caller_api)
+            # don't let '*' type squash valid typing
+            if topic_type != rospy.names.TOPIC_ANYTYPE or not topic in self.topics_types:
+                self.topics_types[topic] = topic_type
+            pub_uris = self.publishers.get_apis(topic)
+            self._notify_topic_subscribers(topic, pub_uris)
+            mloginfo("+PUB [%s] %s %s",topic, caller_id, caller_api)
+            sub_uris = self.subscribers.get_apis(topic)            
+        finally:
+            self.ps_lock.release()
+
+        return 1, "Registered [%s] as publisher of [%s]"%(caller_id, topic), sub_uris
 
     _mremap_table['unregisterPublisher'] = [0] # remap topic   
     @apivalidate(0, (is_topic('topic'), is_api('caller_api')))
@@ -687,11 +794,44 @@ class ROSMasterHandlerSD(ROSHandler):
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
-                code, msg, val = master.unregisterPublisher(*args)
+                code, msg, val = master.remoteUnregisterPublisher(*args)
                 if code != 1:
-                    logfatal("unable to unregister publication [%s] with master: %s"%(topic, msg))
+                    logwarn("unable to unregister publication [%s] with master: %s"%(topic, msg))
 
         return retval
+
+    _mremap_table['remoteUnregisterPublisher'] = [0] # remap topic   
+    @apivalidate(0, (is_topic('topic'), is_api('caller_api')))
+    def remoteUnregisterPublisher(self, caller_id, topic, caller_api):
+        """
+        Unregister the caller as a publisher of the topic.
+        @param caller_id: ROS caller id
+        @type  caller_id: str
+        @param topic: Fully-qualified name of topic to unregister.
+        @type  topic: str
+        @param caller_api str: API URI of service to
+           unregister. Unregistration will only occur if current
+           registration matches.
+        @type  caller_api: str
+        @return: (code, statusMessage, numUnregistered). 
+           If numUnregistered is zero it means that the caller was not registered as a publisher.
+           The call still succeeds as the intended final state is reached.
+        @rtype: (int, str, int)
+        """            
+        try:
+            self.ps_lock.acquire()
+            retval = self.reg_manager.unregister_publisher(topic, caller_id, caller_api)
+            if retval[VAL]:
+                self._notify_topic_subscribers(topic, self.publishers.get_apis(topic))
+            mloginfo("-PUB [%s] %s %s",topic, caller_id, caller_api)
+        finally:
+            self.ps_lock.release()
+
+        if retval[2] == 0:
+            return retval
+
+        return retval
+
 
     ##################################################################################
     # GRAPH STATE APIS
