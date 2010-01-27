@@ -32,7 +32,7 @@ class ServiceDiscoveryManager(threading.Thread):
 
     def get_remote_services(self):
         self.remote_services_lock.acquire()
-        copy = self.remote_services_lock
+        copy = self.remote_services
         self.remote_services_lock.release()
         return copy
 
@@ -108,7 +108,7 @@ class ServiceDiscoveryManager(threading.Thread):
             self.resolved.append(True)
             print 'Resolved service: %s, %s, %s' % (fullname, hosttarget, port)
             self.remote_services_lock.acquire()
-            self.remote_services[fullname]= 'http:/%s:%d/' % (hosttarget, port)
+            self.remote_services[fullname]= 'http://%s:%d/' % (hosttarget, port)
             print self.remote_services.keys()
             self.remote_services_lock.release()
 
