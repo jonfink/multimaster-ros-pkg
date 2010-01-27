@@ -86,7 +86,9 @@ class ROSMasterHandlerSD(ROSHandler):
 
         self.blacklist_topics = ['/clock', '/rosout', '/rosout_agg', '/time']
 
-        self.sd = ServiceDiscoveryManager('_rosmaster._tcp', 11311, _timout=2.0)
+        self.sd = ServiceDiscoveryManager('_rosmaster._tcp', 11311)
+
+        self.sd.start()
 
         ## parameter server dictionary
         self.param_server = rospy.paramserver.ParamDictionary(self.reg_manager)
@@ -95,6 +97,10 @@ class ROSMasterHandlerSD(ROSHandler):
         #self.registerSubscriber('/simple_subscriber', '/foo/another_simple_string_sub', 'std_msgs/String', 'http://remora.rodan:51100')
 
     def _shutdown(self, reason=''):
+        self.sd.stop()
+        if self.sd.is_alive():
+            self.sd.join()
+        
         if self.thread_pool is not None:
             self.thread_pool.join_all(wait_for_tasks=False, wait_for_threads=False)
             self.thread_pool = None
@@ -536,7 +542,7 @@ class ROSMasterHandlerSD(ROSHandler):
             args = (caller_id, topic, topic_type, caller_api)
             print 'Remote registerSubscriber(%s, %s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
-            for m in remote_master_uri
+            for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
                 code, msg, val = master.registerSubscriber(*args)
