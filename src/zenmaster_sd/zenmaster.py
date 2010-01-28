@@ -141,11 +141,35 @@ class ROSMasterHandlerSD(ROSHandler):
         d = ','
         return (d.join(self.auto_namespace_topics).find(topic) >= 0)
 
+    def read_params(self):
+        while not self.param_server.has_param('/blacklist_topics') or \
+                not self.param_server.has_param('/blacklist_services') or \
+                not self.param_server.has_param('/blacklist_params') or \
+                not self.param_server.has_param('/auto_namespace_topics'):
+            pass
+
+        blacklist_topics_str = self.param_server.get_param('/blacklist_topics')
+        blacklist_services_str = self.param_server.get_param('/blacklist_services')
+        blacklist_params_str = self.param_server.get_param('/blacklist_params')
+        auto_namespace_topics_str = self.param_server.get_param('/auto_namespace_topics')
+
+        self.blacklist_topics.extend(blacklist_topics_str.split(','))
+        self.blacklist_services.extend(blacklist_services_str.split(','))
+        self.blacklist_params.extend(blacklist_params_str.split(','))
+        self.auto_namespace_topics.extend(auto_namespace_topics_str.split(','))
+
+        self.blacklist_topics = list(set(self.blacklist_topics))
+        self.blacklist_services = list(set(self.blacklist_services))
+        self.blacklist_params = list(set(self.blacklist_params))
+        self.auto_namespace_topics = list(set(self.auto_namespace_topics))
+
     def start_service_discovery(self, local_master_uri):
         self.auto_namespace = '/'+local_master_uri.lstrip('http://').replace('.','_').replace(':','_')
         self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, _master_uri=local_master_uri, new_master_callback=self.new_master_callback)
 
         self.sd.start()
+
+        self.read_params()
 
     def new_master_callback(self, remote_master_uri):
         state = self.getSystemState(remote_master_uri)
@@ -173,7 +197,7 @@ class ROSMasterHandlerSD(ROSHandler):
         for topic in subscribers:
             topic_name = topic[0]
             if self._blacklisted_topic(topic_name):
-                continue
+               continue
             for subscriber in topic[1]:
                 (ret, msg, subscriber_uri) = self.lookupNode(remote_master_uri, subscriber)
                 if ret == 1 and self.topics_types.has_key(topic_name):
