@@ -108,6 +108,8 @@ class ROSMasterHandlerSD(ROSHandler):
         self.blacklist_topics = ['/clock', '/rosout', '/rosout_agg', '/time']
         self.blacklist_services = ['/rosout/get_loggers', '/rosout/set_logger_level']
         self.blacklist_params = ['/run_id']
+        self.auto_namespace_topics = ['/tf']
+        self.auto_namespace = MASTER_NAME
 
         ## parameter server dictionary
         self.param_server = rospy.paramserver.ParamDictionary(self.reg_manager)
@@ -135,8 +137,13 @@ class ROSMasterHandlerSD(ROSHandler):
         d = ','
         return (d.join(self.blacklist_params).find(key) >= 0)
 
-    def start_service_discovery(self):
-        self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, _master_uri=self.uri, new_master_callback=self.new_master_callback)
+    def _auto_namespaced_topic(self, topic):
+        d = ','
+        return (d.join(self.auto_namespace_topics).find(topic) >= 0)
+
+    def start_service_discovery(self, local_master_uri):
+        self.auto_namespace = '/'+local_master_uri.lstrip('http://').replace('.','_').replace(':','_')
+        self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, _master_uri=local_master_uri, new_master_callback=self.new_master_callback)
 
         self.sd.start()
 
@@ -146,19 +153,20 @@ class ROSMasterHandlerSD(ROSHandler):
         subscribers = state[2][1]
         services = state[2][2]
 
-        #print self.getMasterUri(remote_master_uri)
-        print self.uri
-
         master = xmlrpcapi(remote_master_uri)
+
 
         for topic in publishers:
             topic_name = topic[0]
+            topic_prefix = ''
+            if self._auto_namespaced_topic(topic_name):
+                topic_prefix = self.auto_namespace
             if self._blacklisted_topic(topic_name):
                 continue
             for publisher in topic[1]:
                 (ret, msg, publisher_uri) = self.lookupNode(remote_master_uri, publisher)
                 if ret == 1:
-                    args = (publisher, topic_name, self.topics_types[topic_name], publisher_uri)
+                    args = (publisher, topic_prefix+topic_name.lstrip('/'), self.topics_types[topic_name], publisher_uri)
                     print 'Calling remoteRegisterPublisher(%s, %s, %s, %s)' % args
                     master.remoteRegisterPublisher(*args)
 
@@ -808,12 +816,22 @@ class ROSMasterHandlerSD(ROSHandler):
         try:
             self.ps_lock.acquire()
 
+            # check if we should reform subscriber (i.e. it was namespaced on remote publish and 
+            # needs to be put back to its original name)
+            if topic.find(self.auto_namespace) >= 0 and \
+                    self._auto_namespaced_topic(topic.lstrip(self.auto_namespace)):
+                #print 'Original topic: ', topic
+                #print 'Removing: ', self.auto_namespace.rstrip('/')
+                topic = '/'+topic.lstrip(self.auto_namespace)
+                #print 'Reformed topic: ', topic
+                
+
             sub_uris = self.subscribers.get_apis(topic)
             d=','
             if d.join(sub_uris).find(caller_api) >= 0:
                 pub_uris = self.publishers.get_apis(topic)
                 return 1, "Already subscribed to [%s]"%topic, pub_uris
-                
+
             self.reg_manager.register_subscriber(topic, caller_id, caller_api)
             mloginfo("+SUB [%s] %s %s",topic, caller_id, caller_api)
             pub_uris = self.publishers.get_apis(topic)
@@ -849,6 +867,7 @@ class ROSMasterHandlerSD(ROSHandler):
         if retval[2] == 0:
             return retval
 
+        # Handle remote masters
         if not self._blacklisted_topic(topic):
             args = (caller_id, topic, caller_api)
             print 'Remote unregisterSubscriber(%s, %s, %s)' % args
@@ -881,6 +900,16 @@ class ROSMasterHandlerSD(ROSHandler):
         """
         try:
             self.ps_lock.acquire()
+
+            # check if we should reform subscriber (i.e. it was namespaced on remote publish and 
+            # needs to be put back to its original name)
+            if topic.find(self.auto_namespace) >= 0 and \
+                    self._auto_namespaced_topic(topic.lstrip(self.auto_namespace)):
+                #print 'Original topic: ', topic
+                #print 'Removing: ', self.auto_namespace.rstrip('/')
+                topic = '/'+topic.lstrip(self.auto_namespace)
+                #print 'Reformed topic: ', topic
+
             retval = self.reg_manager.unregister_subscriber(topic, caller_id, caller_api)
             mloginfo("-SUB [%s] %s %s",topic, caller_id, caller_api)
         finally:
@@ -928,8 +957,12 @@ class ROSMasterHandlerSD(ROSHandler):
         finally:
             self.ps_lock.release()
 
+        # Handle remote masters
+        topic_prefix = ''
+        if self._auto_namespaced_topic(topic):
+            topic_prefix = self.auto_namespace
         if not self._blacklisted_topic(topic):
-            args = (caller_id, topic, topic_type, caller_api)
+            args = (caller_id, topic_prefix+topic.lstrip('/'), topic_type, caller_api)
             print 'Remote registerPublisher(%s, %s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
             for m in remote_master_uri:
@@ -1013,8 +1046,11 @@ class ROSMasterHandlerSD(ROSHandler):
         if retval[2] == 0:
             return retval
 
+        # Handle remote masters
         if not self._blacklisted_topic(topic):
-            args = (caller_id, topic, caller_api)
+            if self._auto_namespaced_topic(topic_name):
+                topic_prefix = self.auto_namespace
+            args = (caller_id, topic_prefix+topic.lstrip('/'), caller_api)
             print 'Remote unregisterPublisher(%s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
             for m in remote_master_uri:
@@ -1154,7 +1190,7 @@ def start_master(environ, port=DEFAULT_MASTER_PORT):
     _local_master_uri = master.uri
 
     # start service discovery on ROSMasterHandlerSD
-    master.handler.start_service_discovery()
+    master.handler.start_service_discovery(master.uri)
 
     return master
 
