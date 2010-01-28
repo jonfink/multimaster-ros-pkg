@@ -12,7 +12,9 @@ import pybonjour
 import threading
 
 class ServiceDiscoveryManager(threading.Thread):
-    def __init__(self, _regtype='_rosmaster._tcp', _port=11311, _timeout=2.0, _freq=1.0):
+    def __init__(self, _regtype='_rosmaster._tcp', _port=11311, _name=None, _data='', _timeout=2.0, _freq=1.0):
+        self.register_name = _name
+        self.data = _data
         self.regtype = _regtype
         self.port = _port
         self.freq = _freq
@@ -49,8 +51,10 @@ class ServiceDiscoveryManager(threading.Thread):
             # syncronize 
 
     def setup(self):
-        self.sdRef = pybonjour.DNSServiceRegister(regtype = self.regtype,
+        self.sdRef = pybonjour.DNSServiceRegister(name=self.register_name,
+                                                  regtype = self.regtype,
                                                   port = self.port,
+                                                  txtRecord = self.data,
                                                   callBack = self.register_callback)
 
         self.browse_sdRef = pybonjour.DNSServiceBrowse(regtype = self.regtype,
@@ -108,12 +112,12 @@ class ServiceDiscoveryManager(threading.Thread):
         if errorCode == pybonjour.kDNSServiceErr_NoError:
             self.resolved.append(True)
             print 'Resolved service: %s, %s, %s' % (fullname, hosttarget, port)
-            self.add_remote_service(fullname, hosttarget, port)
+            self.add_remote_service(fullname, hosttarget, port, txtRecord)
 
-    def add_remote_service(self, name, hosttarget, port):
+    def add_remote_service(self, name, hosttarget, port, txtRecord):
         uri = 'http://%s:%d/' % (hosttarget, port)
         self.remote_services_lock.acquire()
-        self.remote_services[name]= uri
+        self.remote_services[name]=uri
         print self.remote_services.keys()
         self.remote_services_lock.release()
         return uri

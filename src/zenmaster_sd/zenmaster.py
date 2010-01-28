@@ -55,12 +55,23 @@ from roslib.rosenv import ROS_ROOT, ROS_MASTER_URI, ROS_HOSTNAME, ROS_NAMESPACE,
 from service_discovery_manager import *
 
 class ROSMasterDiscoveryManager(ServiceDiscoveryManager):
-    def __init__(self, _regtype='_rosmaster._tcp', _port=11311, _timeout=2.0, _freq=1.0, new_master_callback=None):
+    def __init__(self, _regtype='_rosmaster._tcp', _port=11311, _master_uri=None, _timeout=2.0, _freq=1.0, new_master_callback=None):
         self.new_master_callback = new_master_callback
-        ServiceDiscoveryManager.__init__(self, _regtype, _port, _timeout, _freq)
+        self.master_uri = _master_uri
+        data = pybonjour.TXTRecord({'master_uri': self.master_uri})
+        ServiceDiscoveryManager.__init__(self, _regtype=_regtype, _port=_port, _data=data, _timeout=_timeout, _freq=_freq)
 
-    def add_remote_service(self, name, hosttarget, port):
-        uri = ServiceDiscoveryManager.add_remote_service(self, name, hosttarget, port)
+    def add_remote_service(self, name, hosttarget, port, txtRecord):
+        remote_master_uri = None
+        try:
+            remote_master_uri = pybonjour.TXTRecord().parse(data=txtRecord)['master_uri']
+        except KeyError:
+            pass
+
+        if remote_master_uri and (remote_master_uri == self.master_uri):
+            return
+
+        uri = ServiceDiscoveryManager.add_remote_service(self, name, hosttarget, port, txtRecord)
         if self.new_master_callback:
             self.new_master_callback(uri)
 
@@ -98,10 +109,6 @@ class ROSMasterHandlerSD(ROSHandler):
         self.blacklist_services = ['/rosout/get_loggers', '/rosout/set_logger_level']
         self.blacklist_params = ['/run_id']
 
-        self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, new_master_callback=self.new_master_callback)
-
-        self.sd.start()
-
         ## parameter server dictionary
         self.param_server = rospy.paramserver.ParamDictionary(self.reg_manager)
 
@@ -128,13 +135,19 @@ class ROSMasterHandlerSD(ROSHandler):
         d = ','
         return (d.join(self.blacklist_params).find(key) >= 0)
 
+    def start_service_discovery(self):
+        self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, _master_uri=self.uri, new_master_callback=self.new_master_callback)
+
+        self.sd.start()
+
     def new_master_callback(self, remote_master_uri):
         state = self.getSystemState(remote_master_uri)
         publishers = state[2][0]
         subscribers = state[2][1]
         services = state[2][2]
 
-        print self.getMasterUri(remote_master_uri)
+        #print self.getMasterUri(remote_master_uri)
+        print self.uri
 
         master = xmlrpcapi(remote_master_uri)
 
@@ -1139,6 +1152,10 @@ def start_master(environ, port=DEFAULT_MASTER_PORT):
     while not master.uri and not rospy.core.is_shutdown():
         time.sleep(0.0001) #poll for init
     _local_master_uri = master.uri
+
+    # start service discovery on ROSMasterHandlerSD
+    master.handler.start_service_discovery()
+
     return master
 
 ENV_DOC = {
