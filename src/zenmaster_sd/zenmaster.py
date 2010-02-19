@@ -1027,6 +1027,8 @@ class ROSMasterHandlerSD(ROSHandler):
                 sub_uris = self.subscribers.get_apis(topic)
                 return 1, "Already registered [%s] as publisher of [%s]"%(caller_id, topic), sub_uris
 
+            print 'reg_manager.register_publisher(%s, %s, %s)' % (topic, caller_id, caller_api)
+
             self.reg_manager.register_publisher(topic, caller_id, caller_api)
             # don't let '*' type squash valid typing
             if topic_type != rospy.names.TOPIC_ANYTYPE or not topic in self.topics_types:
