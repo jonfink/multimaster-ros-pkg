@@ -182,7 +182,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
         for topic in publishers:
             topic_name = topic[0]
-            topic_prefix = ''
+            topic_prefix = '/'
             if self._auto_namespaced_topic(topic_name):
                 topic_prefix = self.auto_namespace
             if self._blacklisted_topic(topic_name):
@@ -638,8 +638,9 @@ class ROSMasterHandlerSD(ROSHandler):
 
         if not self._blacklisted_service(service):
             args = (caller_id, service, service_api, caller_api)
-            print 'Remote registerService(%s, %s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
+            if len(remote_master_uri) > 0:
+                print 'Remote registerService(%s, %s, %s, %s)' % args
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
@@ -729,8 +730,9 @@ class ROSMasterHandlerSD(ROSHandler):
 
         if not self._blacklisted_service(service):
             args = (caller_id, service, service_api)
-            print 'Remote unregisterService(%s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
+            if len(remote_master_uri) > 0:
+                print 'Remote unregisterService(%s, %s, %s)' % args
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
@@ -807,8 +809,9 @@ class ROSMasterHandlerSD(ROSHandler):
 
         if not self._blacklisted_topic(topic):
             args = (caller_id, topic, topic_type, caller_api)
-            print 'Remote registerSubscriber(%s, %s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
+            if len(remote_master_uri) > 0:
+                print 'Remote registerSubscriber(%s, %s, %s, %s)' % args
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
@@ -894,8 +897,9 @@ class ROSMasterHandlerSD(ROSHandler):
         # Handle remote masters
         if not self._blacklisted_topic(topic):
             args = (caller_id, topic, caller_api)
-            print 'Remote unregisterSubscriber(%s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
+            if len(remote_master_uri) > 0:
+                print 'Remote unregisterSubscriber(%s, %s, %s)' % args
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
@@ -982,13 +986,14 @@ class ROSMasterHandlerSD(ROSHandler):
             self.ps_lock.release()
 
         # Handle remote masters
-        topic_prefix = ''
+        topic_prefix = '/'
         if self._auto_namespaced_topic(topic):
             topic_prefix = self.auto_namespace
         if not self._blacklisted_topic(topic):
             args = (caller_id, topic_prefix+topic.lstrip('/'), topic_type, caller_api)
-            print 'Remote registerPublisher(%s, %s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
+            if len(remote_master_uri) > 0:
+                print 'Remote registerPublisher(%s, %s, %s, %s)' % args
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
@@ -1062,23 +1067,29 @@ class ROSMasterHandlerSD(ROSHandler):
         """            
         try:
             self.ps_lock.acquire()
+
             retval = self.reg_manager.unregister_publisher(topic, caller_id, caller_api)
             if retval[VAL]:
                 self._notify_topic_subscribers(topic, self.publishers.get_apis(topic))
             mloginfo("-PUB [%s] %s %s",topic, caller_id, caller_api)
+
+            if retval[2] == 0:
+                return retval
+
+        except Exception, e:
+            print e
         finally:
             self.ps_lock.release()
 
-        if retval[2] == 0:
-            return retval
-
         # Handle remote masters
         if not self._blacklisted_topic(topic):
-            if self._auto_namespaced_topic(topic_name):
+            topic_prefix='/'
+            if self._auto_namespaced_topic(topic):
                 topic_prefix = self.auto_namespace
             args = (caller_id, topic_prefix+topic.lstrip('/'), caller_api)
-            print 'Remote unregisterPublisher(%s, %s, %s)' % args
             remote_master_uri = self.sd.get_remote_services().values()
+            if len(remote_master_uri) > 0:
+                print 'Remote unregisterPublisher(%s, %s, %s)' % args
             for m in remote_master_uri:
                 print '... on %s' % m
                 master = xmlrpcapi(m)
