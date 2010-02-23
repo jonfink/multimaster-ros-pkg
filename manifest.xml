@@ -9,6 +9,7 @@
   <review status="unreviewed" notes=""/>
   <url>http://ros.org/wiki/zenmaster_sd</url>
   <depend package="rospy"/>
+  <depend package="pybonjour"/>
 
 </package>
 
