@@ -200,7 +200,7 @@ class ROSMasterHandlerSD(ROSHandler):
                     #master.remoteRegisterPublisher(*args)
                     remotePublishers.append(args)
 
-        master.remoteRegisterPublishers(remotePublishers)
+        master.remoteRegisterPublishers(remote_master_uri, remotePublishers)
 
         remoteSubscribers = []
         for topic in subscribers:
@@ -215,7 +215,7 @@ class ROSMasterHandlerSD(ROSHandler):
                     #master.remoteRegisterSubscriber(*args)
                     remoteSubscribers.append(args)
 
-        master.remoteRegisterSubscribers(remoteSubscribers)
+        master.remoteRegisterSubscribers(remote_master_uri, remoteSubscribers)
 
         remoteServices = []
         for service in services:
@@ -231,7 +231,7 @@ class ROSMasterHandlerSD(ROSHandler):
                     #master.remoteRegisterService(*args)
                     remoteServices.append(args)
 
-        master.remoteRegisterService(remoteServices)
+        master.remoteRegisterServices(remote_master_uri, remoteServices)
 
         param_names = self.param_server.get_param_names()
 
@@ -730,8 +730,8 @@ class ROSMasterHandlerSD(ROSHandler):
         return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
 
     _mremap_table['remoteRegisterServices'] = [0] # remap topic
-    @apivalidate(0, ( not_none('remoteServices'),))
-    def remoteRegisterServices(self, remoteServices):
+    @apivalidate(0, (not_none('remoteServices'),))
+    def remoteRegisterServices(self, caller_id, remoteServices):
         """
         @param remoteServices: list of args to remoteRegisterService
         @type  caller_id: list
@@ -941,7 +941,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
     _mremap_table['remoteRegisterSubscribers'] = [0] # remap topic
     @apivalidate(0, ( not_none('remoteSubscribers'),))
-    def remoteRegisterSubscribers(self, remoteSubscribers):
+    def remoteRegisterSubscribers(self, caller_id, remoteSubscribers):
         """
         Subscribe the caller to the specified topic. In addition to receiving
         a list of current publishers, the subscriber will also receive notifications
@@ -1143,7 +1143,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
     _mremap_table['remoteRegisterPublishers'] = [0] # remap topic
     @apivalidate(0, ( not_none('remotePublishers'),))
-    def remoteRegisterPublishers(self, remotePublishers):
+    def remoteRegisterPublishers(self, caller_id, remotePublishers):
         """
         @param remotePublishers: list of args to remoteRegisterPublishers
         @type  caller_id: list
