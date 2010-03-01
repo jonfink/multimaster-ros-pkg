@@ -182,9 +182,9 @@ class ROSMasterHandlerSD(ROSHandler):
         subscribers = state[2][1]
         services = state[2][2]
 
-        master = xmlrpcapi(remote_master_uri)
+        #master = xmlrpcapi(remote_master_uri)
+        master = xmlrpclib.MultiCall(xmlrpclib.ServerProxy(remote_master_uri))
 
-        remotePublishers = []
         for topic in publishers:
             topic_name = topic[0]
             topic_prefix = '/'
@@ -196,13 +196,9 @@ class ROSMasterHandlerSD(ROSHandler):
                 (ret, msg, publisher_uri) = self.lookupNode(remote_master_uri, publisher)
                 if ret == 1:
                     args = (publisher, topic_prefix+topic_name.lstrip('/'), self.topics_types[topic_name], publisher_uri)
-                    print 'Calling remoteRegisterPublisher(%s, %s, %s, %s)' % args
-                    #master.remoteRegisterPublisher(*args)
-                    remotePublishers.append(args)
+                    #print 'Calling remoteRegisterPublisher(%s, %s, %s, %s)' % args
+                    master.remoteRegisterPublisher(*args)
 
-        master.remoteRegisterPublishers(remote_master_uri, remotePublishers)
-
-        remoteSubscribers = []
         for topic in subscribers:
             topic_name = topic[0]
             if self._blacklisted_topic(topic_name):
@@ -212,12 +208,8 @@ class ROSMasterHandlerSD(ROSHandler):
                 if ret == 1 and self.topics_types.has_key(topic_name):
                     args = (subscriber, topic_name, self.topics_types[topic_name], subscriber_uri)
                     #print 'Calling remoteRegisterSubscriber(%s, %s, %s, %s)' % args
-                    #master.remoteRegisterSubscriber(*args)
-                    remoteSubscribers.append(args)
+                    master.remoteRegisterSubscriber(*args)
 
-        master.remoteRegisterSubscribers(remote_master_uri, remoteSubscribers)
-
-        remoteServices = []
         for service in services:
             service_name = service[0]
             if self._blacklisted_service(service_name):
@@ -227,23 +219,21 @@ class ROSMasterHandlerSD(ROSHandler):
                 (ret, msg, service_uri) = self.lookupService(remote_master_uri, service_name)
                 if ret == 1:
                     args = (provider, service_name, service_uri, provider_uri)
-                    print 'Calling remoteRegisterService(%s, %s, %s, %s)' % args
-                    #master.remoteRegisterService(*args)
-                    remoteServices.append(args)
-
-        master.remoteRegisterServices(remote_master_uri, remoteServices)
+                    #print 'Calling remoteRegisterService(%s, %s, %s, %s)' % args
+                    master.remoteRegisterService(*args)
 
         param_names = self.param_server.get_param_names()
 
-        remoteParamDict = {}
         for key in param_names:
             if self._blacklisted_param(key):
                 continue
-            remoteParamDict[key]=self.param_server.get_param(key)
+            value=self.param_server.get_param(key)
             #print 'setting up for remoteSetParams (%s, %s)' % (key, remoteParamDict[key])
+            args = (remote_master_uri, key, value)
+            master.remoteSetParam(*args)
 
-        args = (remote_master_uri, remoteParamDict)
-        master.remoteSetParams(*args)
+        result = master()
+
             
     @apivalidate('')
     def getMasterUri(self, caller_id): #override super behavior
@@ -393,35 +383,6 @@ class ROSMasterHandlerSD(ROSHandler):
         self.param_server.set_param(key, value, self._notify_param_subscribers)
         mloginfo("+PARAM [%s] by %s",key, caller_id)
         return 1, "parameter %s set"%key, 0
-
-    _mremap_table['remoteSetParams'] = [0] # remap key
-    @apivalidate(0, (not_none('paramDict'),))
-    def remoteSetParams(self, caller_id, paramDict):
-        """
-        Parameter Server: set parameter on remote master. 
-        NOTE: if value is a
-        dictionary it will be treated as a parameter tree, where key
-        is the parameter namespace. For example:::
-          {'x':1,'y':2,'sub':{'z':3}}
-
-        will set key/x=1, key/y=2, and key/sub/z=3. Furthermore, it
-        will replace all existing parameters in the key parameter
-        namespace with the parameters in value. You must set
-        parameters individually if you wish to perform a union update.
-        
-        @param caller_id: ROS caller id
-        @type  caller_id: str
-        @param paramDict: dictionary of key,value params
-        @type  value: dict
-        @return: [code, msg, 0]
-        @rtype: [int, str, int]
-        """
-        for key in paramDict.keys():
-            key = resolve_name(key, caller_id)
-            value = paramDict[key]
-            self.param_server.set_param(key, value, self._notify_param_subscribers)
-            mloginfo("+PARAM [%s] by %s",key, caller_id)
-        return 1, "remote parameters set", 0
 
     _mremap_table['getParam'] = [0] # remap key
     @apivalidate(0, (non_empty_str('key'),))
@@ -729,22 +690,6 @@ class ROSMasterHandlerSD(ROSHandler):
             self.ps_lock.release()
         return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
 
-    _mremap_table['remoteRegisterServices'] = [0] # remap topic
-    @apivalidate(0, (not_none('remoteServices'),))
-    def remoteRegisterServices(self, caller_id, remoteServices):
-        """
-        @param remoteServices: list of args to remoteRegisterService
-        @type  caller_id: list
-        @return: (code, message, publishers). Publishers is a list of XMLRPC API URIs
-           for nodes currently publishing the specified topic.
-        @rtype: (int, str, [str])
-        """
-        #NOTE: subscribers do not get to set topic type
-        for args in remoteServices:
-            self.remoteRegisterService(*args)
-
-        return 1, "Setup remote services", []
-
     _mremap_table['lookupService'] = [0] # remap service
     @apivalidate(0, (is_service('service'),))
     def lookupService(self, caller_id, service):
@@ -870,9 +815,11 @@ class ROSMasterHandlerSD(ROSHandler):
             if d.join(sub_uris).find(caller_api) >= 0:
                 pub_uris = self.publishers.get_apis(topic)
                 return 1, "Already subscribed to [%s]"%topic, pub_uris
-                
+
             self.reg_manager.register_subscriber(topic, caller_id, caller_api)
             mloginfo("+SUB [%s] %s %s",topic, caller_id, caller_api)
+            if topic_type != rospy.names.TOPIC_ANYTYPE or not topic in self.topics_types:
+                self.topics_types[topic] = topic_type
             pub_uris = self.publishers.get_apis(topic)
         finally:
             self.ps_lock.release()
@@ -933,30 +880,13 @@ class ROSMasterHandlerSD(ROSHandler):
 
             self.reg_manager.register_subscriber(topic, caller_id, caller_api)
             mloginfo("+SUB [%s] %s %s",topic, caller_id, caller_api)
+            if topic_type != rospy.names.TOPIC_ANYTYPE or not topic in self.topics_types:
+                self.topics_types[topic] = topic_type
             pub_uris = self.publishers.get_apis(topic)
         finally:
             self.ps_lock.release()
 
         return 1, "Subscribed to [%s]"%topic, pub_uris
-
-    _mremap_table['remoteRegisterSubscribers'] = [0] # remap topic
-    @apivalidate(0, ( not_none('remoteSubscribers'),))
-    def remoteRegisterSubscribers(self, caller_id, remoteSubscribers):
-        """
-        Subscribe the caller to the specified topic. In addition to receiving
-        a list of current publishers, the subscriber will also receive notifications
-        of new publishers via the publisherUpdate API.        
-        @param remoteSubscribers: list of args to remoteRegisterSubscriber
-        @type  caller_id: list
-        @return: (code, message, publishers). Publishers is a list of XMLRPC API URIs
-           for nodes currently publishing the specified topic.
-        @rtype: (int, str, [str])
-        """
-        #NOTE: subscribers do not get to set topic type
-        for args in remoteSubscribers:
-            self.remoteRegisterSubscriber(*args)
-
-        return 1, "Setup remote subsriptions", []
 
     _mremap_table['unregisterSubscriber'] = [0] # remap topic    
     @apivalidate(0, (is_topic('topic'), is_api('caller_api')))
@@ -1140,22 +1070,6 @@ class ROSMasterHandlerSD(ROSHandler):
             self.ps_lock.release()
 
         return 1, "Registered [%s] as publisher of [%s]"%(caller_id, topic), sub_uris
-
-    _mremap_table['remoteRegisterPublishers'] = [0] # remap topic
-    @apivalidate(0, ( not_none('remotePublishers'),))
-    def remoteRegisterPublishers(self, caller_id, remotePublishers):
-        """
-        @param remotePublishers: list of args to remoteRegisterPublishers
-        @type  caller_id: list
-        @return: (code, message, subscribers). Subscribers is a list of XMLRPC API URIs
-           for nodes currently subscribed to specified topic.
-        @rtype: (int, str, [str])
-        """
-        #NOTE: subscribers do not get to set topic type
-        for args in remoteServices:
-            self.remoteRegisterService(*args)
-
-        return 1, "Setup remote publishers", []
 
     _mremap_table['unregisterPublisher'] = [0] # remap topic   
     @apivalidate(0, (is_topic('topic'), is_api('caller_api')))
