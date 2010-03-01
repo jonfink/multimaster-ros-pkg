@@ -396,7 +396,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
     _mremap_table['remoteSetParams'] = [0] # remap key
     @apivalidate(0, (not_none('paramDict'),))
-    def remoteSetParam(self, caller_id, paramDict):
+    def remoteSetParams(self, caller_id, paramDict):
         """
         Parameter Server: set parameter on remote master. 
         NOTE: if value is a
