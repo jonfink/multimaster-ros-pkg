@@ -114,10 +114,15 @@ class ROSMasterHandlerSD(ROSHandler):
         ## parameter server dictionary
         self.param_server = rospy.paramserver.ParamDictionary(self.reg_manager)
 
+        self.sd = None
+
+        self.last_master_activity_time = time.time()
+
     def _shutdown(self, reason=''):
-        self.sd.stop()
-        if self.sd.isAlive():
-            self.sd.join()
+        if self.sd is not None:
+            self.sd.stop()
+            if self.sd.isAlive():
+                self.sd.join()
         
         if self.thread_pool is not None:
             self.thread_pool.join_all(wait_for_tasks=False, wait_for_threads=False)
@@ -179,7 +184,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
         master = xmlrpcapi(remote_master_uri)
 
-
+        remotePublishers = []
         for topic in publishers:
             topic_name = topic[0]
             topic_prefix = '/'
@@ -192,8 +197,12 @@ class ROSMasterHandlerSD(ROSHandler):
                 if ret == 1:
                     args = (publisher, topic_prefix+topic_name.lstrip('/'), self.topics_types[topic_name], publisher_uri)
                     print 'Calling remoteRegisterPublisher(%s, %s, %s, %s)' % args
-                    master.remoteRegisterPublisher(*args)
+                    #master.remoteRegisterPublisher(*args)
+                    remotePublishers.append(args)
 
+        master.remoteRegisterPublishers(remotePublishers)
+
+        remoteSubscribers = []
         for topic in subscribers:
             topic_name = topic[0]
             if self._blacklisted_topic(topic_name):
@@ -202,9 +211,13 @@ class ROSMasterHandlerSD(ROSHandler):
                 (ret, msg, subscriber_uri) = self.lookupNode(remote_master_uri, subscriber)
                 if ret == 1 and self.topics_types.has_key(topic_name):
                     args = (subscriber, topic_name, self.topics_types[topic_name], subscriber_uri)
-                    print 'Calling remoteRegisterSubscriber(%s, %s, %s, %s)' % args
-                    master.remoteRegisterSubscriber(*args)
+                    #print 'Calling remoteRegisterSubscriber(%s, %s, %s, %s)' % args
+                    #master.remoteRegisterSubscriber(*args)
+                    remoteSubscribers.append(args)
 
+        master.remoteRegisterSubscribers(remoteSubscribers)
+
+        remoteServices = []
         for service in services:
             service_name = service[0]
             if self._blacklisted_service(service_name):
@@ -215,16 +228,22 @@ class ROSMasterHandlerSD(ROSHandler):
                 if ret == 1:
                     args = (provider, service_name, service_uri, provider_uri)
                     print 'Calling remoteRegisterService(%s, %s, %s, %s)' % args
-                    master.remoteRegisterService(*args)
+                    #master.remoteRegisterService(*args)
+                    remoteServices.append(args)
+
+        master.remoteRegisterService(remoteServices)
 
         param_names = self.param_server.get_param_names()
+
+        remoteParamDict = {}
         for key in param_names:
             if self._blacklisted_param(key):
                 continue
-            value = self.param_server.get_param(key)
-            args = (remote_master_uri, key, value)
-            print 'Calling remoteSetParam(%s, %s, %s)' % args
-            master.remoteSetParam(*args)
+            remoteParamDict[key]=self.param_server.get_param(key)
+            #print 'setting up for remoteSetParams (%s, %s)' % (key, remoteParamDict[key])
+
+        args = (remote_master_uri, remoteParamDict)
+        master.remoteSetParams(*args)
             
     @apivalidate('')
     def getMasterUri(self, caller_id): #override super behavior
@@ -274,12 +293,13 @@ class ROSMasterHandlerSD(ROSHandler):
 
             if not self._blacklisted_param(key):
                 args = (caller_id, key)
-                remote_master_uri = self.sd.get_remote_services().values()
-                for m in remote_master_uri:
-                    master = xmlrpcapi(m)
-                    code, msg, val = master.remoteDeleteParam(*args)
-                    if code != 1:
-                        logwarn("unable to delete param [%s] on master %s: %s" % (key, m, msg))
+                if self.sd is not None:
+                    remote_master_uri = self.sd.get_remote_services().values()
+                    for m in remote_master_uri:
+                        master = xmlrpcapi(m)
+                        code, msg, val = master.remoteDeleteParam(*args)
+                        if code != 1:
+                            logwarn("unable to delete param [%s] on master %s: %s" % (key, m, msg))
            
             return  1, "parameter %s deleted"%key, 0                
         except KeyError, e:
@@ -334,13 +354,15 @@ class ROSMasterHandlerSD(ROSHandler):
 
         if not self._blacklisted_param(key):
             args = (caller_id, key, value)
-            remote_master_uri = self.sd.get_remote_services().values()
-            for m in remote_master_uri:
-                master = xmlrpcapi(m)
-                code, msg, val = master.remoteSetParam(*args)
-                if code != 1:
-                    logwarn("unable to set param [%s] on master %s: %s" % (key, m, msg))
+            if self.sd is not None:
+                remote_master_uri = self.sd.get_remote_services().values()
+                for m in remote_master_uri:
+                    master = xmlrpcapi(m)
+                    code, msg, val = master.remoteSetParam(*args)
+                    if code != 1:
+                        logwarn("unable to set param [%s] on master %s: %s" % (key, m, msg))
 
+        self.last_master_activity_time = time.time()
         return 1, "parameter %s set"%key, 0
 
     _mremap_table['remoteSetParam'] = [0] # remap key
@@ -371,6 +393,35 @@ class ROSMasterHandlerSD(ROSHandler):
         self.param_server.set_param(key, value, self._notify_param_subscribers)
         mloginfo("+PARAM [%s] by %s",key, caller_id)
         return 1, "parameter %s set"%key, 0
+
+    _mremap_table['remoteSetParams'] = [0] # remap key
+    @apivalidate(0, (not_none('paramDict'),))
+    def remoteSetParam(self, caller_id, paramDict):
+        """
+        Parameter Server: set parameter on remote master. 
+        NOTE: if value is a
+        dictionary it will be treated as a parameter tree, where key
+        is the parameter namespace. For example:::
+          {'x':1,'y':2,'sub':{'z':3}}
+
+        will set key/x=1, key/y=2, and key/sub/z=3. Furthermore, it
+        will replace all existing parameters in the key parameter
+        namespace with the parameters in value. You must set
+        parameters individually if you wish to perform a union update.
+        
+        @param caller_id: ROS caller id
+        @type  caller_id: str
+        @param paramDict: dictionary of key,value params
+        @type  value: dict
+        @return: [code, msg, 0]
+        @rtype: [int, str, int]
+        """
+        for key in paramDict.keys():
+            key = resolve_name(key, caller_id)
+            value = paramDict[key]
+            self.param_server.set_param(key, value, self._notify_param_subscribers)
+            mloginfo("+PARAM [%s] by %s",key, caller_id)
+        return 1, "remote parameters set", 0
 
     _mremap_table['getParam'] = [0] # remap key
     @apivalidate(0, (non_empty_str('key'),))
@@ -638,16 +689,18 @@ class ROSMasterHandlerSD(ROSHandler):
 
         if not self._blacklisted_service(service):
             args = (caller_id, service, service_api, caller_api)
-            remote_master_uri = self.sd.get_remote_services().values()
-            if len(remote_master_uri) > 0:
-                print 'Remote registerService(%s, %s, %s, %s)' % args
-            for m in remote_master_uri:
-                print '... on %s' % m
-                master = xmlrpcapi(m)
-                code, msg, val = master.remoteRegisterService(*args)
-                if code != 1:
-                    logwarn("unable to register service [%s] with master %s: %s"%(service, m, msg))
+            if self.sd is not None:
+                remote_master_uri = self.sd.get_remote_services().values()
+                if len(remote_master_uri) > 0:
+                    print 'Remote registerService(%s, %s, %s, %s)' % args
+                for m in remote_master_uri:
+                    print '... on %s' % m
+                    master = xmlrpcapi(m)
+                    code, msg, val = master.remoteRegisterService(*args)
+                    if code != 1:
+                        logwarn("unable to register service [%s] with master %s: %s"%(service, m, msg))
 
+        self.last_master_activity_time = time.time()
         return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
 
     _mremap_table['remoteRegisterService'] = [0] # remap service
@@ -675,6 +728,22 @@ class ROSMasterHandlerSD(ROSHandler):
         finally:
             self.ps_lock.release()
         return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
+
+    _mremap_table['remoteRegisterServices'] = [0] # remap topic
+    @apivalidate(0, ( not_none('remoteServices'),))
+    def remoteRegisterServices(self, remoteServices):
+        """
+        @param remoteServices: list of args to remoteRegisterService
+        @type  caller_id: list
+        @return: (code, message, publishers). Publishers is a list of XMLRPC API URIs
+           for nodes currently publishing the specified topic.
+        @rtype: (int, str, [str])
+        """
+        #NOTE: subscribers do not get to set topic type
+        for args in remoteServices:
+            self.remoteRegisterService(*args)
+
+        return 1, "Setup remote services", []
 
     _mremap_table['lookupService'] = [0] # remap service
     @apivalidate(0, (is_service('service'),))
@@ -730,15 +799,16 @@ class ROSMasterHandlerSD(ROSHandler):
 
         if not self._blacklisted_service(service):
             args = (caller_id, service, service_api)
-            remote_master_uri = self.sd.get_remote_services().values()
-            if len(remote_master_uri) > 0:
-                print 'Remote unregisterService(%s, %s, %s)' % args
-            for m in remote_master_uri:
-                print '... on %s' % m
-                master = xmlrpcapi(m)
-                code, msg, val = master.remoteUnregisterService(*args)
-                if code != 1:
-                    logwarn("unable to unregister service [%s] with master %s: %s"%(service, m, msg))
+            if self.sd is not None:
+                remote_master_uri = self.sd.get_remote_services().values()
+                if len(remote_master_uri) > 0:
+                    print 'Remote unregisterService(%s, %s, %s)' % args
+                for m in remote_master_uri:
+                    print '... on %s' % m
+                    master = xmlrpcapi(m)
+                    code, msg, val = master.remoteUnregisterService(*args)
+                    if code != 1:
+                        logwarn("unable to unregister service [%s] with master %s: %s"%(service, m, msg))
         
 
         return retval
@@ -809,16 +879,18 @@ class ROSMasterHandlerSD(ROSHandler):
 
         if not self._blacklisted_topic(topic):
             args = (caller_id, topic, topic_type, caller_api)
-            remote_master_uri = self.sd.get_remote_services().values()
-            if len(remote_master_uri) > 0:
-                print 'Remote registerSubscriber(%s, %s, %s, %s)' % args
-            for m in remote_master_uri:
-                print '... on %s' % m
-                master = xmlrpcapi(m)
-                code, msg, val = master.remoteRegisterSubscriber(*args)
-                if code != 1:
-                    logwarn("unable to register subscription [%s] with master %s: %s"%(topic, m, msg))
+            if self.sd is not None:
+                remote_master_uri = self.sd.get_remote_services().values()
+                if len(remote_master_uri) > 0:
+                    print 'Remote registerSubscriber(%s, %s, %s, %s)' % args
+                for m in remote_master_uri:
+                    print '... on %s' % m
+                    master = xmlrpcapi(m)
+                    code, msg, val = master.remoteRegisterSubscriber(*args)
+                    if code != 1:
+                        logwarn("unable to register subscription [%s] with master %s: %s"%(topic, m, msg))
 
+        self.last_master_activity_time = time.time()
         return 1, "Subscribed to [%s]"%topic, pub_uris
 
     _mremap_table['remoteRegisterSubscriber'] = [0] # remap topic
@@ -867,6 +939,25 @@ class ROSMasterHandlerSD(ROSHandler):
 
         return 1, "Subscribed to [%s]"%topic, pub_uris
 
+    _mremap_table['remoteRegisterSubscribers'] = [0] # remap topic
+    @apivalidate(0, ( not_none('remoteSubscribers'),))
+    def remoteRegisterSubscribers(self, remoteSubscribers):
+        """
+        Subscribe the caller to the specified topic. In addition to receiving
+        a list of current publishers, the subscriber will also receive notifications
+        of new publishers via the publisherUpdate API.        
+        @param remoteSubscribers: list of args to remoteRegisterSubscriber
+        @type  caller_id: list
+        @return: (code, message, publishers). Publishers is a list of XMLRPC API URIs
+           for nodes currently publishing the specified topic.
+        @rtype: (int, str, [str])
+        """
+        #NOTE: subscribers do not get to set topic type
+        for args in remoteSubscribers:
+            self.remoteRegisterSubscriber(*args)
+
+        return 1, "Setup remote subsriptions", []
+
     _mremap_table['unregisterSubscriber'] = [0] # remap topic    
     @apivalidate(0, (is_topic('topic'), is_api('caller_api')))
     def unregisterSubscriber(self, caller_id, topic, caller_api):
@@ -897,15 +988,16 @@ class ROSMasterHandlerSD(ROSHandler):
         # Handle remote masters
         if not self._blacklisted_topic(topic):
             args = (caller_id, topic, caller_api)
-            remote_master_uri = self.sd.get_remote_services().values()
-            if len(remote_master_uri) > 0:
-                print 'Remote unregisterSubscriber(%s, %s, %s)' % args
-            for m in remote_master_uri:
-                print '... on %s' % m
-                master = xmlrpcapi(m)
-                code, msg, val = master.remoteUnregisterSubscriber(*args)
-                if code != 1:
-                    logwarn("unable to unregister subscription [%s] with master %s: %s"%(topic, m, msg))
+            if self.sd is not None:
+                remote_master_uri = self.sd.get_remote_services().values()
+                if len(remote_master_uri) > 0:
+                    print 'Remote unregisterSubscriber(%s, %s, %s)' % args
+                for m in remote_master_uri:
+                    print '... on %s' % m
+                    master = xmlrpcapi(m)
+                    code, msg, val = master.remoteUnregisterSubscriber(*args)
+                    if code != 1:
+                        logwarn("unable to unregister subscription [%s] with master %s: %s"%(topic, m, msg))
 
         return retval
 
@@ -991,16 +1083,18 @@ class ROSMasterHandlerSD(ROSHandler):
             topic_prefix = self.auto_namespace
         if not self._blacklisted_topic(topic):
             args = (caller_id, topic_prefix+topic.lstrip('/'), topic_type, caller_api)
-            remote_master_uri = self.sd.get_remote_services().values()
-            if len(remote_master_uri) > 0:
-                print 'Remote registerPublisher(%s, %s, %s, %s)' % args
-            for m in remote_master_uri:
-                print '... on %s' % m
-                master = xmlrpcapi(m)
-                code, msg, val = master.remoteRegisterPublisher(*args)
-                if code != 1:
-                    logwarn("unable to register publication [%s] with remote master %s: %s"%(topic, m, msg))
+            if self.sd is not None:
+                remote_master_uri = self.sd.get_remote_services().values()
+                if len(remote_master_uri) > 0:
+                    print 'Remote registerPublisher(%s, %s, %s, %s)' % args
+                for m in remote_master_uri:
+                    print '... on %s' % m
+                    master = xmlrpcapi(m)
+                    code, msg, val = master.remoteRegisterPublisher(*args)
+                    if code != 1:
+                        logwarn("unable to register publication [%s] with remote master %s: %s"%(topic, m, msg))
 
+        self.last_master_activity_time = time.time()
         return 1, "Registered [%s] as publisher of [%s]"%(caller_id, topic), sub_uris
 
     _mremap_table['remoteRegisterPublisher'] = [0] # remap topic   
@@ -1047,6 +1141,22 @@ class ROSMasterHandlerSD(ROSHandler):
 
         return 1, "Registered [%s] as publisher of [%s]"%(caller_id, topic), sub_uris
 
+    _mremap_table['remoteRegisterPublishers'] = [0] # remap topic
+    @apivalidate(0, ( not_none('remotePublishers'),))
+    def remoteRegisterPublishers(self, remotePublishers):
+        """
+        @param remotePublishers: list of args to remoteRegisterPublishers
+        @type  caller_id: list
+        @return: (code, message, subscribers). Subscribers is a list of XMLRPC API URIs
+           for nodes currently subscribed to specified topic.
+        @rtype: (int, str, [str])
+        """
+        #NOTE: subscribers do not get to set topic type
+        for args in remoteServices:
+            self.remoteRegisterService(*args)
+
+        return 1, "Setup remote publishers", []
+
     _mremap_table['unregisterPublisher'] = [0] # remap topic   
     @apivalidate(0, (is_topic('topic'), is_api('caller_api')))
     def unregisterPublisher(self, caller_id, topic, caller_api):
@@ -1087,15 +1197,16 @@ class ROSMasterHandlerSD(ROSHandler):
             if self._auto_namespaced_topic(topic):
                 topic_prefix = self.auto_namespace
             args = (caller_id, topic_prefix+topic.lstrip('/'), caller_api)
-            remote_master_uri = self.sd.get_remote_services().values()
-            if len(remote_master_uri) > 0:
-                print 'Remote unregisterPublisher(%s, %s, %s)' % args
-            for m in remote_master_uri:
-                print '... on %s' % m
-                master = xmlrpcapi(m)
-                code, msg, val = master.remoteUnregisterPublisher(*args)
-                if code != 1:
-                    logwarn("unable to unregister publication [%s] with master: %s"%(topic, msg))
+            if self.sd is not None:
+                remote_master_uri = self.sd.get_remote_services().values()
+                if len(remote_master_uri) > 0:
+                    print 'Remote unregisterPublisher(%s, %s, %s)' % args
+                for m in remote_master_uri:
+                    print '... on %s' % m
+                    master = xmlrpcapi(m)
+                    code, msg, val = master.remoteUnregisterPublisher(*args)
+                    if code != 1:
+                        logwarn("unable to unregister publication [%s] with master: %s"%(topic, msg))
 
         return retval
 
@@ -1225,6 +1336,9 @@ def start_master(environ, port=DEFAULT_MASTER_PORT):
     while not master.uri and not rospy.core.is_shutdown():
         time.sleep(0.0001) #poll for init
     _local_master_uri = master.uri
+
+    while time.time() - master.handler.last_master_activity_time < 3.0:
+        time.sleep(0.1) # Poll until master is resting
 
     # start service discovery on ROSMasterHandlerSD
     master.handler.start_service_discovery(master.uri)
