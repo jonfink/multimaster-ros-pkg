@@ -301,7 +301,7 @@ class ROSMasterHandlerSD(ROSHandler):
             return  1, "parameter %s deleted"%key, 0                
         except KeyError, e:
             return -1, "parameter [%s] is not set"%key, 0
-        
+
     _mremap_table['setParam'] = [0] # remap key
     @apivalidate(0, (non_empty_str('key'), not_none('value')))
     def setParam(self, caller_id, key, value):
@@ -742,7 +742,6 @@ class ROSMasterHandlerSD(ROSHandler):
                     if code != 1:
                         logwarn("unable to unregister service [%s] with master %s: %s"%(service, m, msg))
         
-
         return retval
 
     _mremap_table['remoteUnregisterService'] = [0] # remap service
@@ -823,6 +822,8 @@ class ROSMasterHandlerSD(ROSHandler):
                     code, msg, val = master.remoteRegisterSubscriber(*args)
                     if code != 1:
                         logwarn("unable to register subscription [%s] with master %s: %s"%(topic, m, msg))
+                    else:
+                        pub_uris.extend(val)
 
         self.last_master_activity_time = time.time()
         return 1, "Subscribed to [%s]"%topic, pub_uris
@@ -989,6 +990,8 @@ class ROSMasterHandlerSD(ROSHandler):
                     code, msg, val = master.remoteRegisterPublisher(*args)
                     if code != 1:
                         logwarn("unable to register publication [%s] with remote master %s: %s"%(topic, m, msg))
+                    else:
+                        sub_uris.extend(val)
 
         self.last_master_activity_time = time.time()
         return 1, "Registered [%s] as publisher of [%s]"%(caller_id, topic), sub_uris
@@ -1215,6 +1218,8 @@ def start_master(environ, port=DEFAULT_MASTER_PORT):
         time.sleep(0.0001) #poll for init
     _local_master_uri = master.uri
 
+    # TODO: Figure out if there is a way to query the launching process for completion state
+    # (e.g. determine when roslaunch has finished starting nodes, reading parameters)
     while time.time() - master.handler.last_master_activity_time < 3.0:
         time.sleep(0.1) # Poll until master is resting
 

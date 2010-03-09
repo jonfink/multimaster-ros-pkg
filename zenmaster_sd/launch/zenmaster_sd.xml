@@ -3,8 +3,7 @@
   <master type="zenmaster_sd" auto="restart" />
   <param name="blacklist_topics" value="/clock, /rosout, /rosout_agg, /time"/>
   <param name="blacklist_services" value="/rosout/get_loggers, /rosout/set_logger_level"/>
-  <param name="blacklist_params" value="/run_id, /blacklist_topics, /blacklist_services, /blacklist_params, /auto_namespace_topics"/>
-  <param name="auto_namespace_topics" value="/tf"/>
+  <param name="blacklist_params" value="/run_id, /blacklist_topics, /blacklist_services, /blacklist_params"/>
 
 
 </launch>
