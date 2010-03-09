@@ -22,6 +22,11 @@ Requirements
 This code uses the pybonjour python module which in turn relies on a
 running avahi daemon for linux.  
 
+zenmaster_sd must be placed in $ROS_ROOT/bin/ with something like the
+following:
+
+	sudo cp bin/zenmaster_sd $ROS_ROOT/bin/
+
 
 Simple Example
 ==============
