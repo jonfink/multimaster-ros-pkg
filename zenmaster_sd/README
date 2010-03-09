@@ -1,0 +1,37 @@
+Overview
+========
+
+zenmaster_sd is an alternate ROS master
+
+It is designed for system where it is desireable to run one master
+node per machine.  Masters go on to discover each other via Bonjour.
+When a new remote master is discovered, it is added to a local list of
+remote master addresses. From this point on, local XMLRPC calls to
+register/unregister subscribers/publishers/services/params are echoed
+to the remote masters.  Also, at first discovery, the remote master is
+syncronized with the local master in terms of existing
+publishers/subscribers/services/params.  
+
+It is necessary (and sometimes beneficial) to blacklist certain
+topics/services/parameters.  See the example launch file for more
+details. 
+
+Requirements
+============
+
+This code uses the pybonjour python module which in turn relies on a
+running avahi daemon for linux.  
+
+
+Simple Example
+==============
+
+(1) Simply run roslaunch the file launch/zenmaster_sd.xml on machine A
+(2) Repeat on machine B (obviously, they should be on the same local
+    network)
+(3) Start a simple publisher on machine A (i.e. "rostopic pub
+    /testing geometry_msgs/Point32 '{x: 1.0, y: 2.0, z: 3.0}'")
+(4) The topic should show up more or less right away on machine B and
+    the connection can be tested with "rostopic echo /testing"
+
+

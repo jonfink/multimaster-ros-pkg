@@ -1,8 +1,7 @@
 <package>
   <description brief="zenmaster_sd">
-
-     zenmaster_sd
-
+     zenmaster_sd is a ros master designed to run separate instances
+     on machines across a shared network
   </description>
   <author>Jon Fink</author>
   <license>BSD</license>
