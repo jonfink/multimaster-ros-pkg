@@ -108,8 +108,6 @@ class ROSMasterHandlerSD(ROSHandler):
         self.blacklist_topics = ['/clock', '/rosout', '/rosout_agg', '/time']
         self.blacklist_services = ['/rosout/get_loggers', '/rosout/set_logger_level']
         self.blacklist_params = ['/run_id']
-        self.auto_namespace_topics = ['/tf']
-        self.auto_namespace = MASTER_NAME
 
         ## parameter server dictionary
         self.param_server = rospy.paramserver.ParamDictionary(self.reg_manager)
@@ -142,34 +140,25 @@ class ROSMasterHandlerSD(ROSHandler):
         d = ','
         return (d.join(self.blacklist_params).find(key) >= 0)
 
-    def _auto_namespaced_topic(self, topic):
-        d = ','
-        return (d.join(self.auto_namespace_topics).find(topic) >= 0)
-
     def read_params(self):
         while not self.param_server.has_param('/blacklist_topics') or \
                 not self.param_server.has_param('/blacklist_services') or \
-                not self.param_server.has_param('/blacklist_params') or \
-                not self.param_server.has_param('/auto_namespace_topics'):
+                not self.param_server.has_param('/blacklist_params') :
             pass
 
         blacklist_topics_str = self.param_server.get_param('/blacklist_topics')
         blacklist_services_str = self.param_server.get_param('/blacklist_services')
         blacklist_params_str = self.param_server.get_param('/blacklist_params')
-        auto_namespace_topics_str = self.param_server.get_param('/auto_namespace_topics')
 
         self.blacklist_topics.extend(blacklist_topics_str.split(','))
         self.blacklist_services.extend(blacklist_services_str.split(','))
         self.blacklist_params.extend(blacklist_params_str.split(','))
-        self.auto_namespace_topics.extend(auto_namespace_topics_str.split(','))
 
         self.blacklist_topics = list(set(self.blacklist_topics))
         self.blacklist_services = list(set(self.blacklist_services))
         self.blacklist_params = list(set(self.blacklist_params))
-        self.auto_namespace_topics = list(set(self.auto_namespace_topics))
 
     def start_service_discovery(self, local_master_uri):
-        self.auto_namespace = '/'+local_master_uri.lstrip('http://').replace('.','_').replace(':','_')
         self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, _master_uri=local_master_uri, new_master_callback=self.new_master_callback)
 
         self.sd.start()
@@ -188,8 +177,6 @@ class ROSMasterHandlerSD(ROSHandler):
         for topic in publishers:
             topic_name = topic[0]
             topic_prefix = '/'
-            if self._auto_namespaced_topic(topic_name):
-                topic_prefix = self.auto_namespace
             if self._blacklisted_topic(topic_name):
                 continue
             for publisher in topic[1]:
@@ -862,16 +849,6 @@ class ROSMasterHandlerSD(ROSHandler):
         try:
             self.ps_lock.acquire()
 
-            # check if we should reform subscriber (i.e. it was namespaced on remote publish and 
-            # needs to be put back to its original name)
-            if topic.find(self.auto_namespace) >= 0 and \
-                    self._auto_namespaced_topic(topic.lstrip(self.auto_namespace)):
-                #print 'Original topic: ', topic
-                #print 'Removing: ', self.auto_namespace.rstrip('/')
-                topic = '/'+topic.lstrip(self.auto_namespace)
-                #print 'Reformed topic: ', topic
-                
-
             sub_uris = self.subscribers.get_apis(topic)
             d=','
             if d.join(sub_uris).find(caller_api) >= 0:
@@ -951,15 +928,6 @@ class ROSMasterHandlerSD(ROSHandler):
         try:
             self.ps_lock.acquire()
 
-            # check if we should reform subscriber (i.e. it was namespaced on remote publish and 
-            # needs to be put back to its original name)
-            if topic.find(self.auto_namespace) >= 0 and \
-                    self._auto_namespaced_topic(topic.lstrip(self.auto_namespace)):
-                #print 'Original topic: ', topic
-                #print 'Removing: ', self.auto_namespace.rstrip('/')
-                topic = '/'+topic.lstrip(self.auto_namespace)
-                #print 'Reformed topic: ', topic
-
             retval = self.reg_manager.unregister_subscriber(topic, caller_id, caller_api)
             mloginfo("-SUB [%s] %s %s",topic, caller_id, caller_api)
         finally:
@@ -1009,8 +977,6 @@ class ROSMasterHandlerSD(ROSHandler):
 
         # Handle remote masters
         topic_prefix = '/'
-        if self._auto_namespaced_topic(topic):
-            topic_prefix = self.auto_namespace
         if not self._blacklisted_topic(topic):
             args = (caller_id, topic_prefix+topic.lstrip('/'), topic_type, caller_api)
             if self.sd is not None:
@@ -1108,8 +1074,6 @@ class ROSMasterHandlerSD(ROSHandler):
         # Handle remote masters
         if not self._blacklisted_topic(topic):
             topic_prefix='/'
-            if self._auto_namespaced_topic(topic):
-                topic_prefix = self.auto_namespace
             args = (caller_id, topic_prefix+topic.lstrip('/'), caller_api)
             if self.sd is not None:
                 remote_master_uri = self.sd.get_remote_services().values()
