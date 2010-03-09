@@ -1,0 +1,3 @@
+This repository contains the necessary packages for running and
+syncronizing multiple ROS master nodes across a network using service
+discovery (via Bonjour or Avahi's Bonjour compatibility layer).
