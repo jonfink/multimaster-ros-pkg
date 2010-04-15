@@ -27,6 +27,11 @@ following:
 
 	sudo cp bin/zenmaster_sd $ROS_ROOT/bin/
 
+Additionally, the base ROS installation must be patched. Note that 
+this will only work with the Box Turtle release (and possibly earlier).
+
+        cp ros_dist_changes.patch $ROS_ROOT/
+        patch -p0 < ros_dist_changes.patch
 
 Simple Example
 ==============
