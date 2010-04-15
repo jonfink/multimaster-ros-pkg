@@ -113,7 +113,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
         self.blacklist_topics = ['/clock', '/rosout', '/rosout_agg', '/time']
         self.blacklist_services = ['/rosout/get_loggers', '/rosout/set_logger_level']
-        self.blacklist_params = ['/run_id']
+        self.blacklist_params = ['/run_id', '/blacklist_topics', '/blacklist_services', '/blacklist_params']
 
         ## parameter server dictionary
         self.param_server = rospy.paramserver.ParamDictionary(self.reg_manager)
@@ -199,10 +199,10 @@ class ROSMasterHandlerSD(ROSHandler):
             self.whitelist_params.extend(whitelist_params_str.split(','))
             self.whitelist_params = list(set(self.whitelist_params))
 
-    def start_service_discovery(self, local_master_uri):
+    def start_service_discovery(self, local_master_uri, port):
         self.read_params()
         
-        self.sd = ROSMasterDiscoveryManager(self.sd_name, 11311, _master_uri=local_master_uri, new_master_callback=self.new_master_callback)
+        self.sd = ROSMasterDiscoveryManager(self.sd_name, port, _master_uri=local_master_uri, new_master_callback=self.new_master_callback)
 
         self.sd.start()
 
@@ -1264,7 +1264,7 @@ def start_master(environ, port=DEFAULT_MASTER_PORT):
         time.sleep(0.1) # Poll until master is resting
 
     # start service discovery on ROSMasterHandlerSD
-    master.handler.start_service_discovery(master.uri)
+    master.handler.start_service_discovery(master.uri, port)
 
     return master
 
