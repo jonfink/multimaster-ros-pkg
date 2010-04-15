@@ -105,6 +105,12 @@ class ROSMasterHandlerSD(ROSHandler):
         
         self.topics_types = {} #dict { topicName : type }
 
+        self.sd_name = '_rosmaster._tcp'
+
+        self.whitelist_topics = []
+        self.whitelist_services = []
+        self.whitelist_params = []
+
         self.blacklist_topics = ['/clock', '/rosout', '/rosout_agg', '/time']
         self.blacklist_services = ['/rosout/get_loggers', '/rosout/set_logger_level']
         self.blacklist_params = ['/run_id']
@@ -128,6 +134,24 @@ class ROSMasterHandlerSD(ROSHandler):
 
         return super(ROSMasterHandlerSD, self)._shutdown(reason)
 
+    def _valid_topic(self, topic):
+        if len(self.whitelist_topics) == 0:
+            return not self._blacklisted_topic(topic)
+        d = ','
+        return (d.join(self.whitelist_topics).find(topic) >= 0)
+                       
+    def _valid_service(self, service):
+        if len(self.whitelist_services) == 0:
+            return not self._blacklisted_service(service)
+        d = ','
+        return (d.join(self.whitelist_services).find(service) >= 0)
+
+    def _valid_param(self, param):
+        if len(self.whitelist_params) == 0:
+            return not self._blacklisted_param(param)
+        d = ','
+        return (d.join(self.whitelist_params).find(param) >= 0)
+
     def _blacklisted_topic(self, topic):
         d = ','
         return (d.join(self.blacklist_topics).find(topic) >= 0)
@@ -141,29 +165,46 @@ class ROSMasterHandlerSD(ROSHandler):
         return (d.join(self.blacklist_params).find(key) >= 0)
 
     def read_params(self):
-        while not self.param_server.has_param('/blacklist_topics') or \
-                not self.param_server.has_param('/blacklist_services') or \
-                not self.param_server.has_param('/blacklist_params') :
-            pass
+        if self.param_server.has_param('/sd_name'):
+            self.sd_name = self.param_server.get_param('/sd_name')
+            print 'Setting sd_name: %s' % (self.sd_name)
 
-        blacklist_topics_str = self.param_server.get_param('/blacklist_topics')
-        blacklist_services_str = self.param_server.get_param('/blacklist_services')
-        blacklist_params_str = self.param_server.get_param('/blacklist_params')
+        if self.param_server.has_param('/blackist_topics'):
+            blacklist_topics_str = self.param_server.get_param('/blacklist_topics')
+            self.blacklist_topics.extend(blacklist_topics_str.split(','))
+            self.blacklist_topics = list(set(self.blacklist_topics))
+            
+        if self.param_server.has_param('/blacklist_services'):
+            blacklist_services_str = self.param_server.get_param('/blacklist_services')
+            self.blacklist_services.extend(blacklist_services_str.split(','))
+            self.blacklist_services = list(set(self.blacklist_services))
+            
+        if self.param_server.has_param('/blacklist_params'):
+            blacklist_params_str = self.param_server.get_param('/blacklist_params')
+            self.blacklist_params.extend(blacklist_params_str.split(','))
+            self.blacklist_params = list(set(self.blacklist_params))
 
-        self.blacklist_topics.extend(blacklist_topics_str.split(','))
-        self.blacklist_services.extend(blacklist_services_str.split(','))
-        self.blacklist_params.extend(blacklist_params_str.split(','))
-
-        self.blacklist_topics = list(set(self.blacklist_topics))
-        self.blacklist_services = list(set(self.blacklist_services))
-        self.blacklist_params = list(set(self.blacklist_params))
+        if self.param_server.has_param('/whitelist_topics'):
+            whitelist_topics_str = self.param_server.get_param('/whitelist_topics')
+            self.whitelist_topics.extend(whitelist_topics_str.split(','))
+            self.whitelist_topics = list(set(self.whitelist_topics))
+            
+        if self.param_server.has_param('/whitelist_services'):
+            whitelist_services_str = self.param_server.get_param('/whitelist_services')
+            self.whitelist_services.extend(whitelist_services_str.split(','))
+            self.whitelist_services = list(set(self.whitelist_services))
+            
+        if self.param_server.has_param('/whitelist_params'):
+            whitelist_params_str = self.param_server.get_param('/whitelist_params')
+            self.whitelist_params.extend(whitelist_params_str.split(','))
+            self.whitelist_params = list(set(self.whitelist_params))
 
     def start_service_discovery(self, local_master_uri):
-        self.sd = ROSMasterDiscoveryManager('_rosmaster._tcp', 11311, _master_uri=local_master_uri, new_master_callback=self.new_master_callback)
+        self.read_params()
+        
+        self.sd = ROSMasterDiscoveryManager(self.sd_name, 11311, _master_uri=local_master_uri, new_master_callback=self.new_master_callback)
 
         self.sd.start()
-
-        self.read_params()
 
     def new_master_callback(self, remote_master_uri):
         state = self.getSystemState(remote_master_uri)
@@ -177,7 +218,7 @@ class ROSMasterHandlerSD(ROSHandler):
         for topic in publishers:
             topic_name = topic[0]
             topic_prefix = '/'
-            if self._blacklisted_topic(topic_name):
+            if not self._valid_topic(topic_name):
                 continue
             for publisher in topic[1]:
                 (ret, msg, publisher_uri) = self.lookupNode(remote_master_uri, publisher)
@@ -188,7 +229,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
         for topic in subscribers:
             topic_name = topic[0]
-            if self._blacklisted_topic(topic_name):
+            if not self._valid_topic(topic_name):
                continue
             for subscriber in topic[1]:
                 (ret, msg, subscriber_uri) = self.lookupNode(remote_master_uri, subscriber)
@@ -199,7 +240,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
         for service in services:
             service_name = service[0]
-            if self._blacklisted_service(service_name):
+            if not self._valid_service(service_name):
                 continue
             for provider in service[1]:
                 (ret, msg, provider_uri) = self.lookupNode(remote_master_uri, provider)
@@ -212,7 +253,7 @@ class ROSMasterHandlerSD(ROSHandler):
         param_names = self.param_server.get_param_names()
 
         for key in param_names:
-            if self._blacklisted_param(key):
+            if not self._valid_param(key):
                 continue
             value=self.param_server.get_param(key)
             #print 'setting up for remoteSetParams (%s, %s)' % (key, remoteParamDict[key])
@@ -221,7 +262,6 @@ class ROSMasterHandlerSD(ROSHandler):
 
         result = master()
 
-            
     @apivalidate('')
     def getMasterUri(self, caller_id): #override super behavior
         """
@@ -268,7 +308,7 @@ class ROSMasterHandlerSD(ROSHandler):
             self.param_server.delete_param(key, self._notify_param_subscribers)
             mloginfo("-PARAM [%s] by %s",key, caller_id) 
 
-            if not self._blacklisted_param(key):
+            if self._valid_param(key):
                 args = (caller_id, key)
                 if self.sd is not None:
                     remote_master_uri = self.sd.get_remote_services().values()
@@ -329,7 +369,7 @@ class ROSMasterHandlerSD(ROSHandler):
         self.param_server.set_param(key, value, self._notify_param_subscribers)
         mloginfo("+PARAM [%s] by %s",key, caller_id)
 
-        if not self._blacklisted_param(key):
+        if self._valid_param(key):
             args = (caller_id, key, value)
             if self.sd is not None:
                 remote_master_uri = self.sd.get_remote_services().values()
@@ -635,7 +675,7 @@ class ROSMasterHandlerSD(ROSHandler):
         finally:
             self.ps_lock.release()
 
-        if not self._blacklisted_service(service):
+        if self._valid_service(service):
             args = (caller_id, service, service_api, caller_api)
             if self.sd is not None:
                 remote_master_uri = self.sd.get_remote_services().values()
@@ -729,7 +769,7 @@ class ROSMasterHandlerSD(ROSHandler):
         if retval[2] == 0:
             return retval
 
-        if not self._blacklisted_service(service):
+        if self._valid_service(service):
             args = (caller_id, service, service_api)
             if self.sd is not None:
                 remote_master_uri = self.sd.get_remote_services().values()
@@ -810,7 +850,7 @@ class ROSMasterHandlerSD(ROSHandler):
         finally:
             self.ps_lock.release()
 
-        if not self._blacklisted_topic(topic):
+        if self._valid_topic(topic):
             args = (caller_id, topic, topic_type, caller_api)
             if self.sd is not None:
                 remote_master_uri = self.sd.get_remote_services().values()
@@ -894,7 +934,7 @@ class ROSMasterHandlerSD(ROSHandler):
             return retval
 
         # Handle remote masters
-        if not self._blacklisted_topic(topic):
+        if self._valid_topic(topic):
             args = (caller_id, topic, caller_api)
             if self.sd is not None:
                 remote_master_uri = self.sd.get_remote_services().values()
@@ -978,7 +1018,7 @@ class ROSMasterHandlerSD(ROSHandler):
 
         # Handle remote masters
         topic_prefix = '/'
-        if not self._blacklisted_topic(topic):
+        if self._valid_topic(topic):
             args = (caller_id, topic_prefix+topic.lstrip('/'), topic_type, caller_api)
             if self.sd is not None:
                 remote_master_uri = self.sd.get_remote_services().values()
@@ -1075,7 +1115,7 @@ class ROSMasterHandlerSD(ROSHandler):
             self.ps_lock.release()
 
         # Handle remote masters
-        if not self._blacklisted_topic(topic):
+        if self._valid_topic(topic):
             topic_prefix='/'
             args = (caller_id, topic_prefix+topic.lstrip('/'), caller_api)
             if self.sd is not None:
