@@ -58,13 +58,14 @@ class ROSMasterDiscoveryManager(ServiceDiscoveryManager):
     def __init__(self, _regtype='_rosmaster._tcp', _port=11311, _master_uri=None, _timeout=2.0, _freq=1.0, new_master_callback=None):
         self.new_master_callback = new_master_callback
         self.master_uri = _master_uri
-        data = pybonjour.TXTRecord({'master_uri': self.master_uri})
+
+        data = {'master_uri':self.master_uri}
         ServiceDiscoveryManager.__init__(self, _regtype=_regtype, _port=_port, _data=data, _timeout=_timeout, _freq=_freq)
 
     def add_remote_service(self, name, hosttarget, port, txtRecord):
         remote_master_uri = None
         try:
-            remote_master_uri = pybonjour.TXTRecord().parse(data=txtRecord)['master_uri']
+            remote_master_uri = txtRecord['master_uri']
         except KeyError:
             pass
 
