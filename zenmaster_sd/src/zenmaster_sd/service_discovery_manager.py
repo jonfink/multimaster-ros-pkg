@@ -48,7 +48,6 @@ import select
 if USE_BONJOUR:
     import pybonjour
 else:
-    import pybonjour # Only use for txtRecords
     import dbus, gobject, avahi
     gobject.threads_init()
     from dbus import DBusException
