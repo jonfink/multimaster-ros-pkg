@@ -867,9 +867,11 @@ class ROSMasterHandlerSD(ROSHandler):
                     if code != 1:
                         logwarn("unable to register subscription [%s] with master %s: %s"%(topic, m, msg))
                     else:
-                        pub_uris.extend(val)
+                        pass
+                        #pub_uris.extend(val)
 
         self.last_master_activity_time = time.time()
+
         return 1, "Subscribed to [%s]"%topic, pub_uris
 
     _mremap_table['remoteRegisterSubscriber'] = [0] # remap topic
@@ -1035,7 +1037,8 @@ class ROSMasterHandlerSD(ROSHandler):
                     if code != 1:
                         logwarn("unable to register publication [%s] with remote master %s: %s"%(topic, m, msg))
                     else:
-                        sub_uris.extend(val)
+                        pass
+                        #sub_uris.extend(val)
 
         self.last_master_activity_time = time.time()
         return 1, "Registered [%s] as publisher of [%s]"%(caller_id, topic), sub_uris
