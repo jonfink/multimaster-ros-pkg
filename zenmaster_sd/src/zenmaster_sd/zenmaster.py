@@ -169,39 +169,42 @@ class ROSMasterHandlerSD(ROSHandler):
         return (d.join(self.blacklist_params).find(key) >= 0)
 
     def read_params(self):
+        def _uniquify_list(input_list):
+            return list(set([i.lstrip(' ').rstrip(' ') for i in input_list]))
+
         if self.param_server.has_param('/sd_name'):
             self.sd_name = self.param_server.get_param('/sd_name')
             print 'Setting sd_name: %s' % (self.sd_name)
 
-        if self.param_server.has_param('/blackist_topics'):
+        if self.param_server.has_param('/blacklist_topics'):
             blacklist_topics_str = self.param_server.get_param('/blacklist_topics')
             self.blacklist_topics.extend(blacklist_topics_str.split(','))
-            self.blacklist_topics = list(set(self.blacklist_topics))
+            self.blacklist_topics = _uniquify_list(self.blacklist_topics)
             
         if self.param_server.has_param('/blacklist_services'):
             blacklist_services_str = self.param_server.get_param('/blacklist_services')
             self.blacklist_services.extend(blacklist_services_str.split(','))
-            self.blacklist_services = list(set(self.blacklist_services))
+            self.blacklist_services = _uniquify_list(self.blacklist_services)
             
         if self.param_server.has_param('/blacklist_params'):
             blacklist_params_str = self.param_server.get_param('/blacklist_params')
             self.blacklist_params.extend(blacklist_params_str.split(','))
-            self.blacklist_params = list(set(self.blacklist_params))
+            self.blacklist_params = _uniquify_list(self.blacklist_params)
 
         if self.param_server.has_param('/whitelist_topics'):
             whitelist_topics_str = self.param_server.get_param('/whitelist_topics')
             self.whitelist_topics.extend(whitelist_topics_str.split(','))
-            self.whitelist_topics = list(set(self.whitelist_topics))
+            self.whitelist_topics = _uniquify_list(self.whitelist_topics)
             
         if self.param_server.has_param('/whitelist_services'):
             whitelist_services_str = self.param_server.get_param('/whitelist_services')
             self.whitelist_services.extend(whitelist_services_str.split(','))
-            self.whitelist_services = list(set(self.whitelist_services))
+            self.whitelist_services = _uniquify_list(self.whitelist_services)
             
         if self.param_server.has_param('/whitelist_params'):
             whitelist_params_str = self.param_server.get_param('/whitelist_params')
             self.whitelist_params.extend(whitelist_params_str.split(','))
-            self.whitelist_params = list(set(self.whitelist_params))
+            self.whitelist_params = _uniquify_list(self.whitelist_params)
 
     def start_service_discovery(self, local_master_uri, port):
         self.read_params()
