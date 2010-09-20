@@ -1039,7 +1039,7 @@ class ROSMasterHandler(object):
 
             self.reg_manager.register_subscriber(topic, caller_id, caller_api)
             mloginfo("+SUB [%s] %s %s",topic, caller_id, caller_api)
-            if topic_type != roslib.names.TOPIC_ANYTYPE or not topic in self.topics_types:
+            if topic_type != roslib.names.ANYTYPE or not topic in self.topics_types:
                 self.topics_types[topic] = topic_type
             pub_uris = self.publishers.get_apis(topic)
         finally:
@@ -1206,7 +1206,7 @@ class ROSMasterHandler(object):
 
             self.reg_manager.register_publisher(topic, caller_id, caller_api)
             # don't let '*' type squash valid typing
-            if topic_type != roslib.names.TOPIC_ANYTYPE or not topic in self.topics_types:
+            if topic_type != roslib.names.ANYTYPE or not topic in self.topics_types:
                 self.topics_types[topic] = topic_type
             pub_uris = self.publishers.get_apis(topic)
             self._notify_topic_subscribers(topic, pub_uris)
