@@ -1,0 +1,31 @@
+Index: /opt/ros/cturle/ros/tools/roslaunch/src/roslaunch/core.py
+===================================================================
+--- /opt/ros/cturtle/ros/tools/roslaunch/src/roslaunch/core.py	2010-08-03 02:16:02.000000000 -0400
++++ core.py	2010-09-17 12:03:30.273402685 -0400
+@@ -273,6 +273,7 @@ class Master:
+     ## start/restart master (i.e. restart an existing master)
+     AUTO_RESTART = 2
+     ROSMASTER = 'rosmaster'
++    ROSMASTER_SD = 'rosmaster_sd'
+     
+     # deprecated
+     ZENMASTER = 'zenmaster'        
+ 
+     def __init__(self, type_=None, uri=None, auto=None):
+Index: /opt/ros/cturtle/ros/tools/roslaunch/src/roslaunch/nodeprocess.py
+===================================================================
+--- /opt/ros/cturtle/ros/tools/roslaunch/src/roslaunch/nodeprocess.py	2010-08-03 02:16:02.000000000 -0400
++++ nodeprocess.py	2010-09-17 12:04:25.313456984 -0400
+@@ -85,8 +85,11 @@ def create_master_process(run_id, type_,
+     if type_ in [Master.ROSMASTER, Master.ZENMASTER]:        
+         package = 'rosmaster'        
+         args = [master, '--core', '-p', str(port)]
++    elif type_ == Master.ROSMASTER_SD:
++        package = 'rosmaster_sd'
++        args = [master, '--core', '-p', str(port)]
+     else:
+-        raise RLException("unknown master typ_: %s"%type_)
++        raise RLException("unknown master type_: %s"%type_)
+ 
+     _logger.info("process[master]: launching with args [%s]"%args)
+     return LocalProcess(run_id, package, 'master', args, os.environ, log_output, None)

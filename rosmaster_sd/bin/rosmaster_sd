@@ -31,6 +31,6 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-import roslib; roslib.load_manifest('zenmaster_sd')
-import zenmaster_sd.zenmaster
-zenmaster_sd.zenmaster.zenmaster_main()
+import roslib; roslib.load_manifest('rosmaster_sd')
+import rosmaster
+rosmaster.rosmaster_main()
