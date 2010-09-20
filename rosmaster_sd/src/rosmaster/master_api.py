@@ -491,7 +491,7 @@ class ROSMasterHandler(object):
                         master = xmlrpcapi(m)
                         code, msg, val = master.remoteDeleteParam(*args)
                         if code != 1:
-                            logwarn("unable to delete param [%s] on master %s: %s" % (key, m, msg))
+                            mlogwarn("unable to delete param [%s] on master %s: %s" % (key, m, msg))
 
             return  1, "parameter %s deleted"%key, 0                
         except KeyError, e:
@@ -550,7 +550,7 @@ class ROSMasterHandler(object):
                     master = xmlrpcapi(m)
                     code, msg, val = master.remoteSetParam(*args)
                     if code != 1:
-                        logwarn("unable to set param [%s] on master %s: %s" % (key, m, msg))
+                        mlogwarn("unable to set param [%s] on master %s: %s" % (key, m, msg))
 
         self.last_master_activity_time = time.time()
         return 1, "parameter %s set"%key, 0
@@ -852,7 +852,7 @@ class ROSMasterHandler(object):
                     master = xmlrpcapi(m)
                     code, msg, val = master.remoteRegisterService(*args)
                     if code != 1:
-                        logwarn("unable to register service [%s] with master %s: %s"%(service, m, msg))
+                        mlogwarn("unable to register service [%s] with master %s: %s"%(service, m, msg))
 
         self.last_master_activity_time = time.time()
         return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
@@ -918,7 +918,7 @@ class ROSMasterHandler(object):
                     master = xmlrpcapi(m)
                     code, msg, val = master.remoteUnregisterService(*args)
                     if code != 1:
-                        logwarn("unable to unregister service [%s] with master %s: %s"%(service, m, msg))
+                        mlogwarn("unable to unregister service [%s] with master %s: %s"%(service, m, msg))
         
         return retval
 
@@ -1001,7 +1001,7 @@ class ROSMasterHandler(object):
                     master = xmlrpcapi(m)
                     code, msg, val = master.remoteRegisterSubscriber(*args)
                     if code != 1:
-                        logwarn("unable to register subscription [%s] with master %s: %s"%(topic, m, msg))
+                        mlogwarn("unable to register subscription [%s] with master %s: %s"%(topic, m, msg))
                     else:
                         pass
                         #pub_uris.extend(val)
@@ -1039,7 +1039,7 @@ class ROSMasterHandler(object):
 
             self.reg_manager.register_subscriber(topic, caller_id, caller_api)
             mloginfo("+SUB [%s] %s %s",topic, caller_id, caller_api)
-            if topic_type != rospy.names.TOPIC_ANYTYPE or not topic in self.topics_types:
+            if topic_type != roslib.names.TOPIC_ANYTYPE or not topic in self.topics_types:
                 self.topics_types[topic] = topic_type
             pub_uris = self.publishers.get_apis(topic)
         finally:
@@ -1085,7 +1085,7 @@ class ROSMasterHandler(object):
                     master = xmlrpcapi(m)
                     code, msg, val = master.remoteUnregisterSubscriber(*args)
                     if code != 1:
-                        logwarn("unable to unregister subscription [%s] with master %s: %s"%(topic, m, msg))
+                        mlogwarn("unable to unregister subscription [%s] with master %s: %s"%(topic, m, msg))
 
         return retval
 
@@ -1166,7 +1166,7 @@ class ROSMasterHandler(object):
                     master = xmlrpcapi(m)
                     code, msg, val = master.remoteRegisterPublisher(*args)
                     if code != 1:
-                        logwarn("unable to register publication [%s] with remote master %s: %s"%(topic, m, msg))
+                        mlogwarn("unable to register publication [%s] with remote master %s: %s"%(topic, m, msg))
                     else:
                         pass
                         #sub_uris.extend(val)
@@ -1206,7 +1206,7 @@ class ROSMasterHandler(object):
 
             self.reg_manager.register_publisher(topic, caller_id, caller_api)
             # don't let '*' type squash valid typing
-            if topic_type != rospy.names.TOPIC_ANYTYPE or not topic in self.topics_types:
+            if topic_type != roslib.names.TOPIC_ANYTYPE or not topic in self.topics_types:
                 self.topics_types[topic] = topic_type
             pub_uris = self.publishers.get_apis(topic)
             self._notify_topic_subscribers(topic, pub_uris)
@@ -1260,7 +1260,7 @@ class ROSMasterHandler(object):
                     master = xmlrpcapi(m)
                     code, msg, val = master.remoteUnregisterPublisher(*args)
                     if code != 1:
-                        logwarn("unable to unregister publication [%s] with master: %s"%(topic, msg))
+                        mlogwarn("unable to unregister publication [%s] with master: %s"%(topic, msg))
 
         return retval
 
