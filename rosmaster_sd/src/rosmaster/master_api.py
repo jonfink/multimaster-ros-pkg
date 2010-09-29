@@ -853,8 +853,20 @@ class ROSMasterHandler(object):
                     code, msg, val = master.remoteRegisterService(*args)
                     if code != 1:
                         mlogwarn("unable to register service [%s] with master %s: %s"%(service, m, msg))
-
         self.last_master_activity_time = time.time()
+        return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
+
+    @apivalidate(0, ( is_service('service'), is_api('service_api'), is_api('caller_api')))
+    def remoteRegisterService(self, caller_id, service, service_api, caller_api):
+        """                                                                                                 Register the caller as a provider of the specified service.                                         @param caller_id str: ROS caller id                                                                 @type  caller_id: str                                                                               @param service: Fully-qualified name of service                                                     @type  service: str                                                                                 @param service_api: Service URI                                                                     @type  service_api: str                                                                             @param caller_api: XML-RPC URI of caller node                                                       @type  caller_api: str                                                                              @return: (code, message, ignore)                                                                    @rtype: (int, str, int)                                                                             """
+        try:
+            self.ps_lock.acquire()
+            self.reg_manager.register_service(service, caller_id, caller_api, service_api)
+            mloginfo("+SERVICE [%s] %s %s", service, caller_id, caller_api)
+            if 0: #TODO
+                self._notify_service_update(service, service_api)
+        finally:
+            self.ps_lock.release()
         return 1, "Registered [%s] as provider of [%s]"%(caller_id, service), 1
 
     @apivalidate(0, (is_service('service'),))
