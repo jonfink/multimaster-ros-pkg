@@ -11,17 +11,11 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 rosbuild_find_ros_package(roslaunch)
 
 execute_process(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  COMMAND sudo patch -p7 -N -d ${roslaunch_PACKAGE_PATH} -i ${PROJECT_SOURCE_DIR}/ros_dist_changes.patch
+  COMMAND patch --dry-run -p7 -d ${roslaunch_PACKAGE_PATH} -i ${PROJECT_SOURCE_DIR}/ros_dist_changes.patch
   RESULT_VARIABLE _patch_failed)
 
 if(_patch_failed)
-  message("Application of patch to ROS distribution failed")
+  message("Great! ROS distribution has already been patched")
+else (_patch_failed)
+  message(FATAL_ERROR "Need to patch ROS distribution for rosmaster_sd (roscd rosmaster_sd && sh update_ros_dist.sh)")
 endif(_patch_failed)
-
-execute_process(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  COMMAND sudo cp ${PROJECT_SOURCE_DIR}/bin/rosmaster_sd $ENV{ROS_ROOT}/bin/
-  RESULT_VARIABLE _cp_failed)
-
-if(_cp_failed)
-  message("Copy of rosmaster_sd script to ROS distribution failed") 
-endif(_cp_failed)
