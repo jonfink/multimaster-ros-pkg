@@ -33,7 +33,7 @@
 # Revision $Id: master.py 8642 2010-03-12 08:52:59Z kwc $
 
 """
-ROS Master. 
+ROS Master.
 
 This module integrates the lower-level implementation modules into a
 single interface for running and stopping the ROS Master.
@@ -49,10 +49,10 @@ import rosmaster.master_api
 DEFAULT_MASTER_PORT=11311 #default port for master's to bind to
 
 class Master(object):
-    
+
     def __init__(self, port=DEFAULT_MASTER_PORT):
         self.port = port
-        
+
     def start(self):
         """
         Start the ROS Master.
@@ -63,24 +63,25 @@ class Master(object):
 
         # poll for initialization
         while not master_node.uri:
-            time.sleep(0.0001) 
+            time.sleep(0.0001)
 
         # save fields
         self.handler = handler
         self.master_node = master_node
         self.uri = master_node.uri
 
-        # TODO: Figure out if there is a way to query the launching process 
+        # TODO: Figure out if there is a way to query the launching process
         # for completion state
         #
-        # (e.g. determine when roslaunch has finished starting nodes, 
+        # (e.g. determine when roslaunch has finished starting nodes,
          # reading parameters, etc)
-        while time.time() - handler.last_master_activity_time < 3.0:
-            time.sleep(0.1) # Poll until master is resting
+        # while time.time() - handler.last_master_activity_time < 2.0:
+        #     print 'Time since last master activity: %f' % (time.time() - handler.last_master_activity_time)
+        #     time.sleep(0.1) # Poll until master is resting
 
-        # start service discovery on ROSMasterHandler
-        handler.start_service_discovery(self.uri, self.port)
-        
+        handler.set_service_discovery_settings(self.uri, self.port)
+        # xml-rpc call will actually start the service discovery
+
         logging.getLogger('rosmaster.master').info("Master initialized: port[%s], uri[%s]", self.port, self.uri)
 
     def ok(self):
@@ -88,7 +89,7 @@ class Master(object):
             return self.master_node.handler._ok()
         else:
             return False
-    
+
     def stop(self):
         if self.master_node is not None:
             self.master_node.shutdown('Master.stop')

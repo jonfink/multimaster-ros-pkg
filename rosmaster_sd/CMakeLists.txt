@@ -11,7 +11,7 @@ set(LIBRARY_OUTPUT_PATH ${PROJECT_SOURCE_DIR}/lib)
 rosbuild_find_ros_package(roslaunch)
 
 execute_process(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-  COMMAND sudo patch -p7 -N -d ${roslaunch_PACKAGE_PATH} -i ${PROJECT_SOURCE_DIR}/ros_dist_changes.patch
+  COMMAND sudo patch -p1 -N -l -d ${roslaunch_PACKAGE_PATH}/src/roslaunch -i ${PROJECT_SOURCE_DIR}/ros_dist_changes.patch
   RESULT_VARIABLE _patch_failed)
 
 if(_patch_failed)
@@ -23,5 +23,5 @@ execute_process(WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
   RESULT_VARIABLE _cp_failed)
 
 if(_cp_failed)
-  message("Copy of rosmaster_sd script to ROS distribution failed") 
+  message("Copy of rosmaster_sd script to ROS distribution failed")
 endif(_cp_failed)

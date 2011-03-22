@@ -32,7 +32,7 @@
 #
 # Revision $Id: master_api.py 8778 2010-03-22 20:34:17Z kwc $
 """
-ROS Master API. 
+ROS Master API.
 
 L{ROSMasterHandler} provides the API implementation of the
 Master. Python allows an API to be introspected from a Python class,
@@ -40,11 +40,11 @@ so the handler has a 1-to-1 mapping with the actual XMLRPC API.
 
 API return convention: (statusCode, statusMessage, returnValue)
 
- - statusCode: an integer indicating the completion condition of the method. 
+ - statusCode: an integer indicating the completion condition of the method.
  - statusMessage: a human-readable string message for debugging
  - returnValue: the return value of the method; method-specific.
 
-Current status codes: 
+Current status codes:
 
  - -1: ERROR: Error on the part of the caller, e.g. an invalid parameter
  - 0: FAILURE: Method was attempted but failed to complete correctly.
@@ -101,7 +101,7 @@ def mlogwarn(msg, *args):
     Warn-level master log statements. These statements may be printed
     to screen so they should be user-readable.
     @param msg: Message string
-    @type  msg: str    
+    @type  msg: str
     @param args: arguments for msg if msg is a format string
     """
     #mloginfo is in core so that it is accessible to master and masterdata
@@ -143,13 +143,13 @@ def apivalidate(error_return_value, validators=()):
             if not isinstance(caller_id, basestring):
                 _logger.error("%s: invalid caller_id param type", f.func_name)
                 return -1, "caller_id must be a string", error_return_value
-            
+
             newArgs = [instance, caller_id] #canonicalized args
             try:
                 for (v, a) in zip(validators, args[2:]):
                     if v:
                         try:
-                            newArgs.append(v(a, caller_id)) 
+                            newArgs.append(v(a, caller_id))
                         except ParameterInvalid, e:
                             _logger.error("%s: invalid parameter: %s", f.func_name, e.message or 'error')
                             return -1, e.message or 'error', error_return_value
@@ -186,7 +186,7 @@ def publisher_update_task(api, topic, pub_uris):
     @param pub_uris: list of publisher APIs to send to node
     @type  pub_uris: [str]
     """
-    
+
     mloginfo("publisherUpdate[%s] -> %s", topic, api)
     #TODO: check return value for errors so we can unsubscribe if stale
     xmlrpcapi(api).publisherUpdate('/master', topic, pub_uris)
@@ -198,7 +198,7 @@ def service_update_task(api, service, uri):
     @type  api: str
     @param service: Service name to send to node
     @type  service: str
-    @param uri: URI to send to node        
+    @param uri: URI to send to node
     @type  uri: str
     """
     mloginfo("serviceUpdate[%s, %s] -> %s",service, uri, api)
@@ -219,7 +219,7 @@ class ROSMasterHandler(object):
     client code as ros::msproxy::MasterProxy automatically inserts
     this parameter (see ros::client::getMaster()).
     """
-    
+
     def __init__(self):
         """ctor."""
 
@@ -237,7 +237,7 @@ class ROSMasterHandler(object):
         self.subscribers = self.reg_manager.subscribers
         self.services = self.reg_manager.services
         self.param_subscribers = self.reg_manager.param_subscribers
-        
+
         self.topics_types = {} #dict { topicName : type }
 
         self.topics_types = {} #dict { topicName : type }
@@ -269,7 +269,7 @@ class ROSMasterHandler(object):
             self.thread_pool.join_all(wait_for_tasks=False, wait_for_threads=False)
             self.thread_pool = None
         self.done = True
-        
+
     def _ready(self, uri):
         """
         Initialize the handler with the XMLRPC URI. This is a standard callback from the roslib.xmlrpc.XmlRpcNode API.
@@ -290,7 +290,7 @@ class ROSMasterHandler(object):
             return not self._blacklisted_topic(topic)
         d = ','
         return (d.join(self.whitelist_topics).find(topic) >= 0)
-                       
+
     def _valid_service(self, service):
         if len(self.whitelist_services) == 0:
             return not self._blacklisted_service(service)
@@ -331,12 +331,12 @@ class ROSMasterHandler(object):
             blacklist_topics_str = self.param_server.get_param('/blacklist_topics')
             self.blacklist_topics.extend(blacklist_topics_str.split(','))
             self.blacklist_topics = _uniquify_list(self.blacklist_topics)
-            
+
         if self.param_server.has_param('/blacklist_services'):
             blacklist_services_str = self.param_server.get_param('/blacklist_services')
             self.blacklist_services.extend(blacklist_services_str.split(','))
             self.blacklist_services = _uniquify_list(self.blacklist_services)
-            
+
         if self.param_server.has_param('/blacklist_params'):
             blacklist_params_str = self.param_server.get_param('/blacklist_params')
             self.blacklist_params.extend(blacklist_params_str.split(','))
@@ -346,21 +346,25 @@ class ROSMasterHandler(object):
             whitelist_topics_str = self.param_server.get_param('/whitelist_topics')
             self.whitelist_topics.extend(whitelist_topics_str.split(','))
             self.whitelist_topics = _uniquify_list(self.whitelist_topics)
-            
+
         if self.param_server.has_param('/whitelist_services'):
             whitelist_services_str = self.param_server.get_param('/whitelist_services')
             self.whitelist_services.extend(whitelist_services_str.split(','))
             self.whitelist_services = _uniquify_list(self.whitelist_services)
-            
+
         if self.param_server.has_param('/whitelist_params'):
             whitelist_params_str = self.param_server.get_param('/whitelist_params')
             self.whitelist_params.extend(whitelist_params_str.split(','))
             self.whitelist_params = _uniquify_list(self.whitelist_params)
 
-    def start_service_discovery(self, local_master_uri, port):
+    def set_service_discovery_settings(self, local_master_uri, port):
+        self.sd_port = port
+        self.local_master_uri = local_master_uri
+
+    def start_service_discovery(self):
         self.read_params()
-        
-        self.sd = ROSMasterDiscoveryManager(self.sd_name, port, _master_uri=local_master_uri, new_master_callback=self.new_master_callback)
+
+        self.sd = ROSMasterDiscoveryManager(self.sd_name, self.sd_port, _master_uri=self.local_master_uri, new_master_callback=self.new_master_callback)
 
         self.sd.start()
 
@@ -420,9 +424,29 @@ class ROSMasterHandler(object):
 
         result = master()
 
-    
+
     ###############################################################################
     # EXTERNAL API
+
+    @apivalidate(0, (None, ))
+    def start_sd(self, caller_id, msg=''):
+        """
+        Start this server's service discovery
+        @param caller_id: ROS caller id
+        @type  caller_id: str
+        @param msg: a message describing why the service discovery is started
+        @type  msg: str
+        @return: [code, msg, 0]
+        @rtype: [int, str, int]
+        """
+        print 'Got xml-rpc call to start service discovery'
+        if msg:
+            print >> sys.stdout, "start service discovery request: %s"%msg
+        else:
+            print >> sys.stdout, "start service discovery requst"
+        self.start_service_discovery()
+        return 1, "start_sd", 0
+
 
     @apivalidate(0, (None, ))
     def shutdown(self, caller_id, msg=''):
@@ -441,17 +465,17 @@ class ROSMasterHandler(object):
             print >> sys.stdout, "shutdown requst"
         self._shutdown('external shutdown request from [%s]: %s'%(caller_id, msg))
         return 1, "shutdown", 0
-        
+
     @apivalidate('')
     def getUri(self, caller_id):
         """
         Get the XML-RPC URI of this server.
-        @param caller_id str: ROS caller id    
+        @param caller_id str: ROS caller id
         @return [int, str, str]: [1, "", xmlRpcUri]
         """
         return 1, "", self.uri
 
-        
+
     @apivalidate(-1)
     def getPid(self, caller_id):
         """
@@ -463,10 +487,10 @@ class ROSMasterHandler(object):
         """
         return 1, "", os.getpid()
 
-    
+
     ################################################################
     # PARAMETER SERVER ROUTINES
-    
+
     @apivalidate(0, (non_empty_str('key'),))
     def deleteParam(self, caller_id, key):
         """
@@ -481,7 +505,7 @@ class ROSMasterHandler(object):
         try:
             key = resolve_name(key, caller_id)
             self.param_server.delete_param(key, self._notify_param_subscribers)
-            mloginfo("-PARAM [%s] by %s",key, caller_id)            
+            mloginfo("-PARAM [%s] by %s",key, caller_id)
 
             if self._valid_param(key):
                 args = (caller_id, key)
@@ -493,7 +517,7 @@ class ROSMasterHandler(object):
                         if code != 1:
                             mlogwarn("unable to delete param [%s] on master %s: %s" % (key, m, msg))
 
-            return  1, "parameter %s deleted"%key, 0                
+            return  1, "parameter %s deleted"%key, 0
         except KeyError, e:
             return -1, "parameter [%s] is not set"%key, 0
 
@@ -511,11 +535,11 @@ class ROSMasterHandler(object):
         try:
             key = resolve_name(key, caller_id)
             self.param_server.delete_param(key, self._notify_param_subscribers)
-            mloginfo("-PARAM [%s] by %s",key, caller_id)            
-            return  1, "parameter %s deleted"%key, 0                
+            mloginfo("-PARAM [%s] by %s",key, caller_id)
+            return  1, "parameter %s deleted"%key, 0
         except KeyError, e:
             return -1, "parameter [%s] is not set"%key, 0
-        
+
     @apivalidate(0, (non_empty_str('key'), not_none('value')))
     def setParam(self, caller_id, key, value):
         """
@@ -528,7 +552,7 @@ class ROSMasterHandler(object):
         will replace all existing parameters in the key parameter
         namespace with the parameters in value. You must set
         parameters individually if you wish to perform a union update.
-        
+
         @param caller_id: ROS caller id
         @type  caller_id: str
         @param key: parameter name
@@ -558,7 +582,7 @@ class ROSMasterHandler(object):
     @apivalidate(0, (non_empty_str('key'), not_none('value')))
     def remoteSetParam(self, caller_id, key, value):
         """
-        Parameter Server: set parameter on remote master. 
+        Parameter Server: set parameter on remote master.
         NOTE: if value is a
         dictionary it will be treated as a parameter tree, where key
         is the parameter namespace. For example:::
@@ -568,7 +592,7 @@ class ROSMasterHandler(object):
         will replace all existing parameters in the key parameter
         namespace with the parameters in value. You must set
         parameters individually if you wish to perform a union update.
-        
+
         @param caller_id: ROS caller id
         @type  caller_id: str
         @param key: parameter name
@@ -604,7 +628,7 @@ class ROSMasterHandler(object):
         try:
             key = resolve_name(key, caller_id)
             return 1, "Parameter [%s]"%key, self.param_server.get_param(key)
-        except KeyError, e: 
+        except KeyError, e:
             return -1, "Parameter [%s] is not set"%key, 0
 
     @apivalidate(0, (non_empty_str('key'),))
@@ -615,7 +639,7 @@ class ROSMasterHandler(object):
 
         searchParam's behavior is to search for the first partial match.
         For example, imagine that there are two 'robot_description' parameters::
-          
+
            /robot_description
              /robot_description/arm
              /robot_description/base
@@ -633,7 +657,7 @@ class ROSMasterHandler(object):
         @param key: parameter key to search for.
         @type  key: str
         @return: [code, statusMessage, foundKey]. If code is not 1, foundKey should be
-            ignored. 
+            ignored.
         @rtype: [int, str, str]
         """
         search_key = self.param_server.search_param(caller_id, key)
@@ -646,7 +670,7 @@ class ROSMasterHandler(object):
     def subscribeParam(self, caller_id, caller_api, key):
         """
         Retrieve parameter value from server and subscribe to updates to that param. See
-        paramUpdate() in the Node API. 
+        paramUpdate() in the Node API.
         @param caller_id str: ROS caller id
         @type  caller_id: str
         @param key: parameter to lookup.
@@ -658,7 +682,7 @@ class ROSMasterHandler(object):
            has not been set yet.
         @rtype: [int, str, XMLRPCLegalValue]
         """
-        key = resolve_name(key, caller_id)        
+        key = resolve_name(key, caller_id)
         try:
             # ps_lock has precedence and is required due to
             # potential self.reg_manager modification
@@ -672,18 +696,18 @@ class ROSMasterHandler(object):
     def unsubscribeParam(self, caller_id, caller_api, key):
         """
         Retrieve parameter value from server and subscribe to updates to that param. See
-        paramUpdate() in the Node API. 
+        paramUpdate() in the Node API.
         @param caller_id str: ROS caller id
         @type  caller_id: str
         @param key: parameter to lookup.
         @type  key: str
         @param caller_api: API URI for paramUpdate callbacks.
         @type  caller_api: str
-        @return: [code, statusMessage, numUnsubscribed]. 
+        @return: [code, statusMessage, numUnsubscribed].
            If numUnsubscribed is zero it means that the caller was not subscribed to the parameter.
         @rtype: [int, str, int]
-        """        
-        key = resolve_name(key, caller_id)        
+        """
+        key = resolve_name(key, caller_id)
         try:
             # ps_lock is required due to potential self.reg_manager modification
             self.ps_lock.acquire()
@@ -696,7 +720,7 @@ class ROSMasterHandler(object):
     @apivalidate(False, (non_empty_str('key'),))
     def hasParam(self, caller_id, key):
         """
-        Check if parameter is stored on server. 
+        Check if parameter is stored on server.
         @param caller_id str: ROS caller id
         @type  caller_id: str
         @param key: parameter to check
@@ -708,21 +732,21 @@ class ROSMasterHandler(object):
         if self.param_server.has_param(key):
             return 1, key, True
         else:
-            return 1, key, False            
+            return 1, key, False
 
     @apivalidate([])
     def getParamNames(self, caller_id):
         """
         Get list of all parameter names stored on this server.
         This does not adjust parameter names for caller's scope.
-        
-        @param caller_id: ROS caller id    
+
+        @param caller_id: ROS caller id
         @type  caller_id: str
         @return: [code, statusMessage, parameterNameList]
         @rtype: [int, str, [str]]
         """
         return 1, "Parameter names", self.param_server.get_param_names()
-            
+
     ##################################################################################
     # NOTIFICATION ROUTINES
 
@@ -742,15 +766,15 @@ class ROSMasterHandler(object):
         thread_pool = self.thread_pool
         if not thread_pool:
             return
-        
+
         if registrations.has_key(key):
-            try:            
+            try:
                 for node_api in registrations.get_apis(key):
                     # use the api as a marker so that we limit one thread per subscriber
                     thread_pool.queue_task(node_api, task, (node_api, key, value))
             except KeyError:
                 _logger.warn('subscriber data stale (key [%s], listener [%s]): node API unknown'%(key, s))
-        
+
     def _notify_param_subscribers(self, updates):
         """
         Notify parameter subscribers of new parameter value
@@ -813,7 +837,7 @@ class ROSMasterHandler(object):
         """
         ###TODO:XXX:stub code, this callback doesnot exist yet
         self._notify(self.service_clients, service_update_task, service, service_api)
-        
+
     ##################################################################################
     # SERVICE PROVIDER
 
@@ -823,15 +847,15 @@ class ROSMasterHandler(object):
         Register the caller as a provider of the specified service.
         @param caller_id str: ROS caller id
         @type  caller_id: str
-        @param service: Fully-qualified name of service 
+        @param service: Fully-qualified name of service
         @type  service: str
-        @param service_api: Service URI 
+        @param service_api: Service URI
         @type  service_api: str
-        @param caller_api: XML-RPC URI of caller node 
+        @param caller_api: XML-RPC URI of caller node
         @type  caller_api: str
         @return: (code, message, ignore)
         @rtype: (int, str, int)
-        """        
+        """
         try:
             self.ps_lock.acquire()
             self.reg_manager.register_service(service, caller_id, caller_api, service_api)
@@ -931,7 +955,7 @@ class ROSMasterHandler(object):
                     code, msg, val = master.remoteUnregisterService(*args)
                     if code != 1:
                         mlogwarn("unable to unregister service [%s] with master %s: %s"%(service, m, msg))
-        
+
         return retval
 
     @apivalidate(0, ( is_service('service'), is_api('service_api')))
@@ -968,10 +992,10 @@ class ROSMasterHandler(object):
         """
         Subscribe the caller to the specified topic. In addition to receiving
         a list of current publishers, the subscriber will also receive notifications
-        of new publishers via the publisherUpdate API.        
+        of new publishers via the publisherUpdate API.
         @param caller_id: ROS caller id
         @type  caller_id: str
-        @param topic str: Fully-qualified name of topic to subscribe to. 
+        @param topic str: Fully-qualified name of topic to subscribe to.
         @param topic_type: Datatype for topic. Must be a package-resource name, i.e. the .msg name.
         @type  topic_type: str
         @param caller_api: XML-RPC URI of caller node for new publisher notifications
@@ -1027,10 +1051,10 @@ class ROSMasterHandler(object):
         """
         Subscribe the caller to the specified topic. In addition to receiving
         a list of current publishers, the subscriber will also receive notifications
-        of new publishers via the publisherUpdate API.        
+        of new publishers via the publisherUpdate API.
         @param caller_id: ROS caller id
         @type  caller_id: str
-        @param topic str: Fully-qualified name of topic to subscribe to. 
+        @param topic str: Fully-qualified name of topic to subscribe to.
         @param topic_type: Datatype for topic. Must be a package-resource name, i.e. the .msg name.
         @type  topic_type: str
         @param caller_api: XML-RPC URI of caller node for new publisher notifications
@@ -1068,9 +1092,9 @@ class ROSMasterHandler(object):
         @param topic: Fully-qualified name of topic to unregister.
         @type  topic: str
         @param caller_api: API URI of service to unregister. Unregistration will only occur if current
-           registration matches.    
+           registration matches.
         @type  caller_api: str
-        @return: (code, statusMessage, numUnsubscribed). 
+        @return: (code, statusMessage, numUnsubscribed).
           If numUnsubscribed is zero it means that the caller was not registered as a subscriber.
           The call still succeeds as the intended final state is reached.
         @rtype: (int, str, int)
@@ -1110,9 +1134,9 @@ class ROSMasterHandler(object):
         @param topic: Fully-qualified name of topic to unregister.
         @type  topic: str
         @param caller_api: API URI of service to unregister. Unregistration will only occur if current
-           registration matches.    
+           registration matches.
         @type  caller_api: str
-        @return: (code, statusMessage, numUnsubscribed). 
+        @return: (code, statusMessage, numUnsubscribed).
           If numUnsubscribed is zero it means that the caller was not registered as a subscriber.
           The call still succeeds as the intended final state is reached.
         @rtype: (int, str, int)
@@ -1162,7 +1186,7 @@ class ROSMasterHandler(object):
             pub_uris = self.publishers.get_apis(topic)
             self._notify_topic_subscribers(topic, pub_uris)
             mloginfo("+PUB [%s] %s %s",topic, caller_id, caller_api)
-            sub_uris = self.subscribers.get_apis(topic)            
+            sub_uris = self.subscribers.get_apis(topic)
         finally:
             self.ps_lock.release()
         # Handle remote masters
@@ -1223,7 +1247,7 @@ class ROSMasterHandler(object):
             pub_uris = self.publishers.get_apis(topic)
             self._notify_topic_subscribers(topic, pub_uris)
             mloginfo("+PUB [%s] %s %s",topic, caller_id, caller_api)
-            sub_uris = self.subscribers.get_apis(topic)            
+            sub_uris = self.subscribers.get_apis(topic)
         finally:
             self.ps_lock.release()
 
@@ -1241,11 +1265,11 @@ class ROSMasterHandler(object):
            unregister. Unregistration will only occur if current
            registration matches.
         @type  caller_api: str
-        @return: (code, statusMessage, numUnregistered). 
+        @return: (code, statusMessage, numUnregistered).
            If numUnregistered is zero it means that the caller was not registered as a publisher.
            The call still succeeds as the intended final state is reached.
         @rtype: (int, str, int)
-        """            
+        """
         try:
             self.ps_lock.acquire()
             retval = self.reg_manager.unregister_publisher(topic, caller_id, caller_api)
@@ -1288,11 +1312,11 @@ class ROSMasterHandler(object):
            unregister. Unregistration will only occur if current
            registration matches.
         @type  caller_api: str
-        @return: (code, statusMessage, numUnregistered). 
+        @return: (code, statusMessage, numUnregistered).
            If numUnregistered is zero it means that the caller was not registered as a publisher.
            The call still succeeds as the intended final state is reached.
         @rtype: (int, str, int)
-        """            
+        """
         try:
             self.ps_lock.acquire()
             retval = self.reg_manager.unregister_publisher(topic, caller_id, caller_api)
@@ -1331,7 +1355,7 @@ class ROSMasterHandler(object):
         finally:
             self.ps_lock.release()
         return retval
-        
+
     @apivalidate(0, (empty_or_valid_name('subgraph'),))
     def getPublishedTopics(self, caller_id, subgraph):
         """
@@ -1356,17 +1380,17 @@ class ROSMasterHandler(object):
         finally:
             self.ps_lock.release()
         return 1, "current topics", retval
-    
+
     @apivalidate([])
-    def getTopicTypes(self, caller_id): 
+    def getTopicTypes(self, caller_id):
         """
         Retrieve list topic names and their types.
-        @param caller_id: ROS caller id    
+        @param caller_id: ROS caller id
         @type  caller_id: str
         @rtype: (int, str, [[str,str]] )
         @return: (code, statusMessage, topicTypes). topicTypes is a list of [topicName, topicType] pairs.
         """
-        try: 
+        try:
             self.ps_lock.acquire()
             retval = self.topics_types.items()
         finally:
@@ -1374,28 +1398,28 @@ class ROSMasterHandler(object):
         return 1, "current system state", retval
 
     @apivalidate([[],[], []])
-    def getSystemState(self, caller_id): 
+    def getSystemState(self, caller_id):
         """
         Retrieve list representation of system state (i.e. publishers, subscribers, and services).
-        @param caller_id: ROS caller id    
+        @param caller_id: ROS caller id
         @type  caller_id: str
         @rtype: (int, str, [[str,[str]], [str,[str]], [str,[str]]])
         @return: (code, statusMessage, systemState).
 
            System state is in list representation::
              [publishers, subscribers, services].
-        
+
            publishers is of the form::
              [ [topic1, [topic1Publisher1...topic1PublisherN]] ... ]
-        
+
            subscribers is of the form::
              [ [topic1, [topic1Subscriber1...topic1SubscriberN]] ... ]
-        
+
            services is of the form::
              [ [service1, [service1Provider1...service1ProviderN]] ... ]
         """
         edges = []
-        try: 
+        try:
             self.ps_lock.acquire()
             retval = [r.get_state() for r in (self.publishers, self.subscribers, self.services)]
         finally:
