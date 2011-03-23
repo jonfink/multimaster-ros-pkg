@@ -1425,3 +1425,4 @@ class ROSMasterHandler(object):
         finally:
             self.ps_lock.release()
         return 1, "current system state", retval
+
