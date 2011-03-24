@@ -244,6 +244,8 @@ class ROSMasterHandler(object):
 
         self.sd_name = '_rosmaster._tcp'
 
+        self.started_service_discovery = False
+
         self.whitelist_topics = []
         self.whitelist_services = []
         self.whitelist_params = []
@@ -362,11 +364,13 @@ class ROSMasterHandler(object):
         self.local_master_uri = local_master_uri
 
     def start_service_discovery(self):
+        if self.started_service_discovery == True:
+            return
+
         self.read_params()
-
         self.sd = ROSMasterDiscoveryManager(self.sd_name, self.sd_port, _master_uri=self.local_master_uri, new_master_callback=self.new_master_callback)
-
         self.sd.start()
+        self.started_service_discovery = True
 
     def new_master_callback(self, remote_master_uri):
         state = self.getSystemState(remote_master_uri)
